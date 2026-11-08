@@ -1,0 +1,9 @@
+{
+    "editor.insertSpaces": false,
+    "editor.tabSize": 4,
+    "editor.detectIndentation": false,
+    "files.eol": "\n",
+    "cmake.sourceDirectory": "${workspaceFolder}/core-bedrock",
+	"cmake.useCMakePresets": "always",
+	"java.configuration.updateBuildConfiguration": "automatic"
+}
