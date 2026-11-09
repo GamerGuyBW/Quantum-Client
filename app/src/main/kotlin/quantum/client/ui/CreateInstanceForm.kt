@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import quantum.shared.Edition
 import quantum.shared.Instance
+import quantum.shared.InstanceNames
 import quantum.shared.InstanceStore
 import quantum.shared.Loader
 
@@ -54,13 +55,16 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 			QuantumButton(
 				text = "Create",
 				onClick = {
-					if(instance_name.isBlank()) {
-						error_message = "Enter a name for the instance."
+					val trimmed_name = instance_name.trim()
+					val name_problem = InstanceNames.findProblem(trimmed_name, edition, InstanceStore.loadAll())
+
+					if(name_problem != null) {
+						error_message = name_problem
 					} else if(game_version.isBlank()) {
 						error_message = "Enter a game version, or latest."
 					} else {
 						val new_instance = Instance(
-							name = instance_name.trim(),
+							name = trimmed_name,
 							edition = edition,
 							game_version = game_version.trim(),
 							loader = selected_loader
