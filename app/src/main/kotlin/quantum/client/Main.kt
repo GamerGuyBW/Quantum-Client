@@ -1,12 +1,13 @@
 package quantum.client
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
+import java.awt.Dimension
+import quantum.client.ui.MainWindow
 import quantum.shared.QuantumInfo
 import quantum.shared.QuantumPaths
 import quantum.shared.SettingsStore
@@ -18,8 +19,14 @@ fun main() {
 	println("Loaded settings (format version ${settings.format_version})")
 
 	application {
-		Window(onCloseRequest = ::exitApplication, title = QuantumInfo.app_name) {
-			Box(modifier = Modifier.fillMaxSize().background(Color.White))
+		val window_state = rememberWindowState(size = DpSize(1280.dp, 720.dp))
+
+		Window(onCloseRequest = ::exitApplication, title = QuantumInfo.app_name, state = window_state) {
+			LaunchedEffect(Unit) {
+				window.minimumSize = Dimension(960, 600)
+			}
+
+			MainWindow()
 		}
 	}
 }
