@@ -9,12 +9,16 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import quantum.shared.QuantumInfo
 import quantum.shared.QuantumPaths
+import quantum.shared.SettingsStore
 
 fun main() {
 	QuantumPaths.createFolders()
 
+	val settings = SettingsStore.load()
+	println("Loaded settings (format version ${settings.format_version})")
+
 	application {
-		Window(onCloseRequest = ::exitApplication, title = "Quantum Client") {
+		Window(onCloseRequest = ::exitApplication, title = QuantumInfo.app_name) {
 			Box(modifier = Modifier.fillMaxSize().background(Color.White))
 		}
 	}
