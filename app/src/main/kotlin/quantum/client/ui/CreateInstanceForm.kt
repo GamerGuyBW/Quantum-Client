@@ -3,12 +3,15 @@ package quantum.client.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import quantum.shared.Edition
 import quantum.shared.Instance
@@ -26,9 +29,23 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
 		BasicText(text = "New ${edition.display_name} instance", style = QuantumTextStyles.heading)
 
-		QuantumTextField(label = "Name", value = instance_name, onValueChange = { new_value -> instance_name = new_value })
+		QuantumTextField(
+			label = "Name",
+			value = instance_name,
+			onValueChange = { new_value ->
+				instance_name = InstanceNames.cleanTyped(new_value)
+				error_message = null
+			}
+		)
 
-		QuantumTextField(label = "Game version", value = game_version, onValueChange = { new_value -> game_version = new_value })
+		QuantumTextField(
+			label = "Game version",
+			value = game_version,
+			onValueChange = { new_value ->
+				game_version = new_value
+				error_message = null
+			}
+		)
 
 		if(edition == Edition.JAVA) {
 			Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -46,25 +63,20 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 			}
 		}
 
-		val current_error = error_message
-		if(current_error != null) {
-			BasicText(text = current_error, style = QuantumTextStyles.error)
-		}
-
-		Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+		Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
 			QuantumButton(
 				text = "Create",
 				onClick = {
-					val trimmed_name = instance_name.trim()
-					val name_problem = InstanceNames.findProblem(trimmed_name, edition, InstanceStore.loadAll())
+					val final_name = instance_name.trimEnd()
+					val name_problem = InstanceNames.findProblem(final_name, edition, InstanceStore.loadAll())
 
 					if(name_problem != null) {
 						error_message = name_problem
 					} else if(game_version.isBlank()) {
-						error_message = "Enter a game version, or latest."
+						error_message = "Enter a game version, or `latest`."
 					} else {
 						val new_instance = Instance(
-							name = trimmed_name,
+							name = final_name,
 							edition = edition,
 							game_version = game_version.trim(),
 							loader = selected_loader
@@ -76,6 +88,11 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 			)
 
 			QuantumButton(text = "Cancel", onClick = onCancel, is_primary = false)
+
+			val current_error = error_message
+			if(current_error != null) {
+				BasicText(text = current_error, style = QuantumTextStyles.error, modifier = Modifier.padding(start = 6.dp))
+			}
 		}
 	}
 }

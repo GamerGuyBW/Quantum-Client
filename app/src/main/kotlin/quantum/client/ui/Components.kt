@@ -24,22 +24,22 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun QuantumButton(text: String, onClick: () -> Unit, is_primary: Boolean = true) {
-	val background_color = if(is_primary) QuantumColors.turquoise else Color.Transparent
-	val border_color = if(is_primary) QuantumColors.turquoise else QuantumColors.border
-	val text_color = if(is_primary) QuantumColors.on_turquoise else QuantumColors.text_primary
+	val background_colour = if(is_primary) QuantumColours.turquoise else Color.Transparent
+	val border_colour = if(is_primary) QuantumColours.turquoise else QuantumColours.border
+	val text_colour = if(is_primary) QuantumColours.on_turquoise else QuantumColours.text_primary
 	val shape = RoundedCornerShape(8.dp)
 
 	Box(
 		modifier = Modifier
 			.clip(shape)
-			.background(background_color)
-			.border(1.dp, border_color, shape)
+			.background(background_colour)
+			.border(1.dp, border_colour, shape)
 			.clickable(onClick = onClick)
 			.pointerHoverIcon(PointerIcon.Hand)
 			.padding(horizontal = 20.dp, vertical = 10.dp),
 		contentAlignment = Alignment.Center
 	) {
-		BasicText(text = text, style = QuantumTextStyles.body.copy(color = text_color, fontWeight = FontWeight.Medium))
+		BasicText(text = text, style = QuantumTextStyles.body.copy(color = text_colour, fontWeight = FontWeight.Medium))
 	}
 }
 
@@ -55,12 +55,12 @@ fun QuantumTextField(label: String, value: String, onValueChange: (String) -> Un
 			onValueChange = onValueChange,
 			singleLine = true,
 			textStyle = QuantumTextStyles.body,
-			cursorBrush = SolidColor(QuantumColors.turquoise),
+			cursorBrush = SolidColor(QuantumColours.turquoise),
 			modifier = Modifier
 				.width(320.dp)
 				.clip(shape)
-				.background(QuantumColors.surface)
-				.border(1.dp, QuantumColors.border, shape)
+				.background(QuantumColours.surface)
+				.border(1.dp, QuantumColours.border, shape)
 				.padding(horizontal = 12.dp, vertical = 10.dp)
 		)
 	}
@@ -68,19 +68,19 @@ fun QuantumTextField(label: String, value: String, onValueChange: (String) -> Un
 
 @Composable
 fun ChoiceChip(text: String, is_selected: Boolean, onClick: () -> Unit) {
-	val border_color = if(is_selected) QuantumColors.blue else QuantumColors.border
-	val text_color = if(is_selected) QuantumColors.text_primary else QuantumColors.text_secondary
+	val border_colour = if(is_selected) QuantumColours.blue else QuantumColours.border
+	val text_colour = if(is_selected) QuantumColours.text_primary else QuantumColours.text_secondary
 	val shape = RoundedCornerShape(8.dp)
 
 	Box(
 		modifier = Modifier
 			.clip(shape)
-			.background(QuantumColors.surface)
-			.border(1.dp, border_color, shape)
+			.background(QuantumColours.surface)
+			.border(1.dp, border_colour, shape)
 			.clickable(onClick = onClick)
 			.pointerHoverIcon(PointerIcon.Hand)
 			.padding(horizontal = 14.dp, vertical = 8.dp)
 	) {
-		BasicText(text = text, style = QuantumTextStyles.body.copy(color = text_color))
+		BasicText(text = text, style = QuantumTextStyles.body.copy(color = text_colour))
 	}
 }

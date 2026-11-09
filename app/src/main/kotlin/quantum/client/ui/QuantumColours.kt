@@ -2,7 +2,7 @@ package quantum.client.ui
 
 import androidx.compose.ui.graphics.Color
 
-object QuantumColors {
+object QuantumColours {
 	val background = Color(0xFF0A0D14)
 	val sidebar = Color(0xFF0F131C)
 	val surface = Color(0xFF151B27)

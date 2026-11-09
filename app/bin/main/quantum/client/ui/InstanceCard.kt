@@ -26,8 +26,8 @@ fun InstanceCard(instance: Instance) {
 		modifier = Modifier
 			.fillMaxWidth()
 			.clip(shape)
-			.background(QuantumColors.surface)
-			.border(1.dp, QuantumColors.border, shape)
+			.background(QuantumColours.surface)
+			.border(1.dp, QuantumColours.border, shape)
 			.padding(12.dp),
 		verticalArrangement = Arrangement.spacedBy(4.dp)
 	) {

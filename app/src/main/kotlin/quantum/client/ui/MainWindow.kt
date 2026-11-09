@@ -19,13 +19,13 @@ import quantum.shared.Edition
 fun MainWindow() {
 	var selected_edition by remember { mutableStateOf(Edition.JAVA) }
 
-	Row(modifier = Modifier.fillMaxSize().background(QuantumColors.background)) {
+	Row(modifier = Modifier.fillMaxSize().background(QuantumColours.background)) {
 		Sidebar(
 			selected_edition = selected_edition,
 			onEditionSelected = { edition -> selected_edition = edition }
 		)
 
-		Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(QuantumColors.border))
+		Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(QuantumColours.border))
 
 		EditionPage(edition = selected_edition, modifier = Modifier.weight(1f).fillMaxHeight())
 	}
