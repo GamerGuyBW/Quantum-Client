@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Quantum-Client"
 
-include(":app")
+include(":app", ":shared")

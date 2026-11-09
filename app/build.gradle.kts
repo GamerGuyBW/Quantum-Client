@@ -19,6 +19,7 @@ kotlin {
 
 dependencies {
 	implementation(compose.desktop.currentOs)
+	implementation(project(":shared"))
 }
 
 compose.desktop {
