@@ -7,5 +7,6 @@ import kotlinx.serialization.Serializable
 data class Group(
 	val id: String = UUID.randomUUID().toString(),
 	val name: String,
-	val edition: Edition
+	val edition: Edition,
+	val is_collapsed: Boolean = false
 )

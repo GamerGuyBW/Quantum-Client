@@ -1,9 +1,11 @@
 package quantum.client.ui
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -14,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import quantum.shared.Edition
+import quantum.shared.GroupStore
 import quantum.shared.Instance
 import quantum.shared.InstanceStore
 import quantum.shared.Loader
@@ -21,9 +24,12 @@ import quantum.shared.NameRules
 
 @Composable
 fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> Unit) {
+	val groups = remember(edition) { GroupStore.loadForEdition(edition) }
+
 	var instance_name by remember { mutableStateOf("") }
 	var game_version by remember { mutableStateOf("latest") }
 	var selected_loader by remember { mutableStateOf(Loader.VANILLA) }
+	var selected_group_id by remember { mutableStateOf<String?>(null) }
 	var error_message by remember { mutableStateOf<String?>(null) }
 
 	Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -63,6 +69,31 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 			}
 		}
 
+		if(groups.isNotEmpty()) {
+			Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+				BasicText(text = "Group", style = QuantumTextStyles.label)
+
+				Row(
+					modifier = Modifier.horizontalScroll(rememberScrollState()),
+					horizontalArrangement = Arrangement.spacedBy(8.dp)
+				) {
+					ChoiceChip(
+						text = "No group",
+						is_selected = selected_group_id == null,
+						onClick = { selected_group_id = null }
+					)
+
+					groups.forEach { group ->
+						ChoiceChip(
+							text = group.name,
+							is_selected = selected_group_id == group.id,
+							onClick = { selected_group_id = group.id }
+						)
+					}
+				}
+			}
+		}
+
 		Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
 			QuantumButton(
 				text = "Create",
@@ -80,7 +111,8 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 							name = final_name,
 							edition = edition,
 							game_version = game_version.trim(),
-							loader = selected_loader
+							loader = selected_loader,
+							group_id = selected_group_id
 						)
 						InstanceStore.save(new_instance)
 						onCreated()

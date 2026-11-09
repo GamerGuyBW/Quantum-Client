@@ -22,7 +22,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import quantum.shared.Edition
 import quantum.shared.GroupStore
@@ -42,6 +41,12 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 	val selected_instance = instances.firstOrNull { instance -> instance.id == selected_instance_id }
 	val group_ids = groups.map { group -> group.id }.toSet()
 	val loose_instances = instances.filter { instance -> instance.group_id == null || instance.group_id !in group_ids }
+
+	fun clearSelection() {
+		selected_instance_id = null
+		is_confirming_delete = false
+		is_choosing_group = false
+	}
 
 	fun toggleSelection(instance: Instance) {
 		selected_instance_id = if(selected_instance_id == instance.id) null else instance.id
@@ -119,24 +124,34 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 							val group_instances = instances.filter { instance -> instance.group_id == group.id }
 
 							item(key = "group-${group.id}", span = { GridItemSpan(maxLineSpan) }) {
-								BasicText(
-									text = group.name,
-									style = QuantumTextStyles.body.copy(fontWeight = FontWeight.Medium),
-									modifier = Modifier.padding(top = 8.dp)
+								GroupHeading(
+									group = group,
+									instance_count = group_instances.size,
+									onClick = {
+										val will_collapse = !group.is_collapsed
+										GroupStore.setCollapsed(group.id, will_collapse)
+										groups = GroupStore.loadForEdition(edition)
+
+										if(will_collapse && selected_instance?.group_id == group.id) {
+											clearSelection()
+										}
+									}
 								)
 							}
 
-							if(group_instances.isEmpty()) {
-								item(key = "empty-${group.id}", span = { GridItemSpan(maxLineSpan) }) {
-									BasicText(text = "No instances in this group yet.", style = QuantumTextStyles.label)
-								}
-							} else {
-								items(group_instances, key = { instance -> instance.id }) { instance ->
-									InstanceCard(
-										instance = instance,
-										is_selected = instance.id == selected_instance_id,
-										onClick = { toggleSelection(instance) }
-									)
+							if(!group.is_collapsed) {
+								if(group_instances.isEmpty()) {
+									item(key = "empty-${group.id}", span = { GridItemSpan(maxLineSpan) }) {
+										BasicText(text = "No instances in this group yet.", style = QuantumTextStyles.label)
+									}
+								} else {
+									items(group_instances, key = { instance -> instance.id }) { instance ->
+										InstanceCard(
+											instance = instance,
+											is_selected = instance.id == selected_instance_id,
+											onClick = { toggleSelection(instance) }
+										)
+									}
 								}
 							}
 						}
@@ -162,8 +177,7 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 								onClick = {
 									InstanceStore.delete(selected_instance)
 									instances = InstanceStore.loadForEdition(edition)
-									selected_instance_id = null
-									is_confirming_delete = false
+									clearSelection()
 								}
 							)
 

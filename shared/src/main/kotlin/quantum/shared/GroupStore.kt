@@ -29,6 +29,13 @@ object GroupStore {
 		saveAll(loadAll() + group)
 	}
 
+	fun setCollapsed(group_id: String, is_collapsed: Boolean) {
+		val updated_groups = loadAll().map { group ->
+			if(group.id == group_id) group.copy(is_collapsed = is_collapsed) else group
+		}
+		saveAll(updated_groups)
+	}
+
 	private fun saveAll(groups: List<Group>) {
 		val file_text = QuantumJson.json.encodeToString(GroupsFile.serializer(), GroupsFile(groups))
 		Files.writeString(groups_file, file_text)
