@@ -15,9 +15,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import quantum.shared.Edition
 import quantum.shared.Instance
-import quantum.shared.InstanceNames
 import quantum.shared.InstanceStore
 import quantum.shared.Loader
+import quantum.shared.NameRules
 
 @Composable
 fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> Unit) {
@@ -33,7 +33,7 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 			label = "Name",
 			value = instance_name,
 			onValueChange = { new_value ->
-				instance_name = InstanceNames.cleanTyped(new_value)
+				instance_name = NameRules.cleanTyped(new_value)
 				error_message = null
 			}
 		)
@@ -68,7 +68,8 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 				text = "Create",
 				onClick = {
 					val final_name = instance_name.trimEnd()
-					val name_problem = InstanceNames.findProblem(final_name, edition, InstanceStore.loadAll())
+					val taken_names = InstanceStore.loadForEdition(edition).map { instance -> instance.name }
+					val name_problem = NameRules.findProblem(final_name, "instance", edition, taken_names)
 
 					if(name_problem != null) {
 						error_message = name_problem

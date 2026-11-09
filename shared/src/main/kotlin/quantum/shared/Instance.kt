@@ -10,5 +10,6 @@ data class Instance(
 	val edition: Edition,
 	val game_version: String,
 	val loader: Loader = Loader.VANILLA,
-	val loader_version: String? = null
+	val loader_version: String? = null,
+	val group_id: String? = null
 )

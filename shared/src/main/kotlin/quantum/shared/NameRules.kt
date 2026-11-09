@@ -1,15 +1,15 @@
 package quantum.shared
 
-object InstanceNames {
+object NameRules {
 	const val max_name_length = 20
 
 	fun cleanTyped(typed_name: String): String {
 		return typed_name.trimStart().take(max_name_length)
 	}
 
-	fun findProblem(name: String, edition: Edition, existing_instances: List<Instance>): String? {
+	fun findProblem(name: String, kind: String, edition: Edition, taken_names: List<String>): String? {
 		if(name.isEmpty()) {
-			return "Enter a name for the instance."
+			return "Enter a name for the $kind."
 		}
 
 		if(name.length > max_name_length) {
@@ -28,9 +28,8 @@ object InstanceNames {
 			return "Names cannot be `.` or `..`."
 		}
 
-		val is_taken = existing_instances.any { instance -> instance.edition == edition && instance.name == name }
-		if(is_taken) {
-			return "A ${edition.display_name} instance named `$name` already exists."
+		if(name in taken_names) {
+			return "A ${edition.display_name} $kind named `$name` already exists."
 		}
 
 		return null
