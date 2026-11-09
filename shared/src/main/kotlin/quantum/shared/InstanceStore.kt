@@ -42,6 +42,10 @@ object InstanceStore {
 		return loadAll().filter { instance -> instance.edition == edition }
 	}
 
+	fun moveToGroup(instance: Instance, group_id: String?) {
+		save(instance.copy(group_id = group_id))
+	}
+
 	fun delete(instance: Instance) {
 		val instances_folder = QuantumPaths.instances_folder.normalize()
 		val instance_folder = instanceFolder(instance).normalize()
