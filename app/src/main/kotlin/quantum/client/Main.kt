@@ -8,9 +8,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import quantum.shared.QuantumInfo
+import quantum.shared.QuantumPaths
 
-fun main() = application {
-	Window(onCloseRequest = ::exitApplication, title = "Quantum Client") {
-		Box(modifier = Modifier.fillMaxSize().background(Color.White))
+fun main() {
+	QuantumPaths.createFolders()
+
+	application {
+		Window(onCloseRequest = ::exitApplication, title = "Quantum Client") {
+			Box(modifier = Modifier.fillMaxSize().background(Color.White))
+		}
 	}
 }
