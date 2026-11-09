@@ -41,4 +41,23 @@ object InstanceStore {
 	fun loadForEdition(edition: Edition): List<Instance> {
 		return loadAll().filter { instance -> instance.edition == edition }
 	}
+
+	fun delete(instance: Instance) {
+		val instances_folder = QuantumPaths.instances_folder.normalize()
+		val instance_folder = instanceFolder(instance).normalize()
+
+		require(instance_folder.parent == instances_folder && instance_folder.fileName.toString() == instance.id) {
+			"Refusing to delete `$instance_folder` because it is not an instance folder."
+		}
+
+		if(Files.notExists(instance_folder)) {
+			return
+		}
+
+		Files.walk(instance_folder).use { path_stream ->
+			path_stream
+				.sorted(Comparator.reverseOrder())
+				.forEach { path -> Files.delete(path) }
+		}
+	}
 }

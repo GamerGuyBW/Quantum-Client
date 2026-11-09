@@ -2,6 +2,7 @@ package quantum.client.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,6 +12,8 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -18,8 +21,9 @@ import quantum.shared.Edition
 import quantum.shared.Instance
 
 @Composable
-fun InstanceCard(instance: Instance) {
+fun InstanceCard(instance: Instance, is_selected: Boolean, onClick: () -> Unit) {
 	val shape = RoundedCornerShape(10.dp)
+	val border_colour = if(is_selected) QuantumColours.blue else QuantumColours.border
 	val details = if(instance.edition == Edition.JAVA) "${instance.game_version} · ${instance.loader.display_name}" else instance.game_version
 
 	Column(
@@ -27,7 +31,9 @@ fun InstanceCard(instance: Instance) {
 			.fillMaxWidth()
 			.clip(shape)
 			.background(QuantumColours.surface)
-			.border(1.dp, QuantumColours.border, shape)
+			.border(1.dp, border_colour, shape)
+			.clickable(onClick = onClick)
+			.pointerHoverIcon(PointerIcon.Hand)
 			.padding(12.dp),
 		verticalArrangement = Arrangement.spacedBy(4.dp)
 	) {

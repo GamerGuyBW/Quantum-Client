@@ -23,10 +23,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun QuantumButton(text: String, onClick: () -> Unit, is_primary: Boolean = true) {
-	val background_colour = if(is_primary) QuantumColours.turquoise else Color.Transparent
-	val border_colour = if(is_primary) QuantumColours.turquoise else QuantumColours.border
-	val text_colour = if(is_primary) QuantumColours.on_turquoise else QuantumColours.text_primary
+fun QuantumButton(text: String, onClick: () -> Unit, style: ButtonStyle = ButtonStyle.PRIMARY) {
+	val background_colour = when(style) {
+		ButtonStyle.PRIMARY -> QuantumColours.turquoise
+		ButtonStyle.SECONDARY -> Color.Transparent
+		ButtonStyle.DANGER -> Color.Transparent
+	}
+	val border_colour = when(style) {
+		ButtonStyle.PRIMARY -> QuantumColours.turquoise
+		ButtonStyle.SECONDARY -> QuantumColours.border
+		ButtonStyle.DANGER -> QuantumColours.red
+	}
+	val text_colour = when(style) {
+		ButtonStyle.PRIMARY -> QuantumColours.on_turquoise
+		ButtonStyle.SECONDARY -> QuantumColours.text_primary
+		ButtonStyle.DANGER -> QuantumColours.red
+	}
 	val shape = RoundedCornerShape(8.dp)
 
 	Box(

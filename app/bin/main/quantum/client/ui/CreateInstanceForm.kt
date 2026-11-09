@@ -87,7 +87,7 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 				}
 			)
 
-			QuantumButton(text = "Cancel", onClick = onCancel, is_primary = false)
+			QuantumButton(text = "Cancel", onClick = onCancel, style = ButtonStyle.SECONDARY)
 
 			val current_error = error_message
 			if(current_error != null) {
