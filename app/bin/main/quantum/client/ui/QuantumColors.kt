@@ -12,6 +12,7 @@ object QuantumColors {
 	val text_secondary = Color(0xFF8A96AB)
 
 	val turquoise = Color(0xFF00C9A7)
+	val on_turquoise = Color(0xFF04201C)
 	val blue = Color(0xFF3D8BFF)
 	val red = Color(0xFFFF3B5C)
 }
