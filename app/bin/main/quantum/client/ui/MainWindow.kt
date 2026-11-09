@@ -7,21 +7,26 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import quantum.shared.Edition
 
 @Composable
 fun MainWindow() {
+	var selected_edition by remember { mutableStateOf(Edition.JAVA) }
+
 	Row(modifier = Modifier.fillMaxSize().background(QuantumColors.background)) {
-		Sidebar()
+		Sidebar(
+			selected_edition = selected_edition,
+			onEditionSelected = { edition -> selected_edition = edition }
+		)
 
 		Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(QuantumColors.border))
 
-		Box(modifier = Modifier.weight(1f).fillMaxHeight())
+		EditionPage(edition = selected_edition, modifier = Modifier.weight(1f).fillMaxHeight())
 	}
-}
-
-@Composable
-fun Sidebar() {
-	Box(modifier = Modifier.width(220.dp).fillMaxHeight().background(QuantumColors.sidebar))
 }
