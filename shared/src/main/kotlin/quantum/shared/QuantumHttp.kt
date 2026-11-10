@@ -65,19 +65,23 @@ object QuantumHttp {
 			HostLimiter.acquire(host)
 
 			val start_nanos = System.nanoTime()
+			var outcome = RequestOutcome.FAILED
 			var retry_after_seconds: Long? = null
 
 			try {
 				val response = http_client.send(request, body_handler)
+				val status_code = response.statusCode()
 
-				if(response.statusCode() == 429 || response.statusCode() == 503) {
+				if(status_code == 429 || status_code == 503) {
 					val retry_after_header = response.headers().firstValue("Retry-After").orElse(null)
 					retry_after_seconds = retry_after_header?.toLongOrNull() ?: default_retry_after_seconds
+					outcome = RequestOutcome.THROTTLED
 				} else {
+					outcome = if(status_code in 200..299) RequestOutcome.NORMAL else RequestOutcome.NOT_TIMED
 					return response
 				}
 			} finally {
-				HostLimiter.release(host, (System.nanoTime() - start_nanos) / 1_000_000_000.0, retry_after_seconds)
+				HostLimiter.release(host, (System.nanoTime() - start_nanos) / 1_000_000_000.0, outcome, retry_after_seconds)
 			}
 		}
 
