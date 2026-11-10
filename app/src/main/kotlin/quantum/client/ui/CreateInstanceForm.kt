@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -13,12 +14,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import quantum.shared.Edition
 import quantum.shared.GroupStore
 import quantum.shared.Instance
 import quantum.shared.InstanceStore
 import quantum.shared.Loader
 import quantum.shared.NameRules
+import quantum.shared.VersionStore
 
 @Composable
 fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> Unit) {
@@ -30,6 +35,20 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	var selected_loader by remember { mutableStateOf(Loader.VANILLA) }
 	var selected_group_id by remember { mutableStateOf<String?>(null) }
 	var error_message by remember { mutableStateOf<String?>(null) }
+	var version_status by remember { mutableStateOf("Loading the version list…") }
+
+	LaunchedEffect(edition) {
+		if(edition == Edition.JAVA) {
+			version_status = try {
+				val manifest = withContext(Dispatchers.IO) { VersionStore.fetchManifest() }
+				"Found ${manifest.versions.size} versions. Latest release `${manifest.latest.release}`, latest snapshot `${manifest.latest.snapshot}`."
+			} catch(error: CancellationException) {
+				throw error
+			} catch(error: Exception) {
+				"Could not load the version list. Check your internet connection."
+			}
+		}
+	}
 
 	Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
 		BasicText(text = "New ${edition.display_name} instance", style = QuantumTextStyles.heading)
@@ -43,14 +62,20 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 			}
 		)
 
-		QuantumTextField(
-			label = "Game version",
-			value = game_version,
-			onValueChange = { new_value ->
-				game_version = new_value
-				error_message = null
+		Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+			QuantumTextField(
+				label = "Game version",
+				value = game_version,
+				onValueChange = { new_value ->
+					game_version = new_value
+					error_message = null
+				}
+			)
+
+			if(edition == Edition.JAVA) {
+				BasicText(text = version_status, style = QuantumTextStyles.label)
 			}
-		)
+		}
 
 		if(edition == Edition.JAVA) {
 			Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
