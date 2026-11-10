@@ -19,11 +19,13 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import quantum.shared.Edition
+import quantum.shared.FabricLoaderInfo
 import quantum.shared.GameVersions
 import quantum.shared.GroupStore
 import quantum.shared.Instance
 import quantum.shared.InstanceStore
 import quantum.shared.Loader
+import quantum.shared.LoaderVersionStore
 import quantum.shared.NameRules
 import quantum.shared.VersionManifest
 import quantum.shared.VersionStore
@@ -46,9 +48,23 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	var retry_count by remember { mutableIntStateOf(0) }
 	var version_type_filter by remember { mutableStateOf<VersionType?>(null) }
 
+	var fabric_versions by remember { mutableStateOf<List<FabricLoaderInfo>?>(null) }
+	var fabric_load_failed by remember { mutableStateOf(false) }
+	var fabric_retry_count by remember { mutableIntStateOf(0) }
+	var selected_loader_version by remember { mutableStateOf<String?>(null) }
+
 	val loaded_manifest = manifest
 	val version_options = remember(loaded_manifest, version_type_filter) {
 		if(loaded_manifest != null) versionOptions(loaded_manifest, version_type_filter) else emptyList()
+	}
+	val resolved_game_version = if(loaded_manifest != null) GameVersions.resolve(game_version, loaded_manifest) else null
+
+	val loaded_fabric_versions = fabric_versions
+	val fabric_options = remember(loaded_fabric_versions) {
+		loaded_fabric_versions.orEmpty().map { fabric_version ->
+			val label = if(fabric_version.stable) fabric_version.version else "${fabric_version.version} (unstable)"
+			DropdownOption<String?>(fabric_version.version, label)
+		}
 	}
 
 	LaunchedEffect(edition, retry_count) {
@@ -61,6 +77,26 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 				throw error
 			} catch(error: Exception) {
 				version_load_failed = true
+			}
+		}
+	}
+
+	LaunchedEffect(selected_loader, resolved_game_version, fabric_retry_count) {
+		fabric_versions = null
+		fabric_load_failed = false
+		selected_loader_version = null
+
+		if(selected_loader == Loader.FABRIC && resolved_game_version != null) {
+			try {
+				val fetched_versions = withContext(Dispatchers.IO) { LoaderVersionStore.fetchFabricVersions(resolved_game_version) }
+				fabric_versions = fetched_versions
+
+				val default_version = fetched_versions.firstOrNull { fabric_version -> fabric_version.stable } ?: fetched_versions.firstOrNull()
+				selected_loader_version = default_version?.version
+			} catch(error: CancellationException) {
+				throw error
+			} catch(error: Exception) {
+				fabric_load_failed = true
 			}
 		}
 	}
@@ -139,8 +175,39 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 						ChoiceChip(
 							text = loader.display_name,
 							is_selected = loader == selected_loader,
-							onClick = { selected_loader = loader }
+							onClick = {
+								selected_loader = loader
+								error_message = null
+							}
 						)
+					}
+				}
+			}
+		}
+
+		if(edition == Edition.JAVA && selected_loader == Loader.FABRIC) {
+			if(loaded_fabric_versions != null && loaded_fabric_versions.isNotEmpty()) {
+				QuantumDropdown(
+					label = "Fabric version",
+					options = fabric_options,
+					selected_value = selected_loader_version,
+					onValueSelected = { fabric_version -> selected_loader_version = fabric_version }
+				)
+			} else {
+				Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+					BasicText(text = "Fabric version", style = QuantumTextStyles.label)
+
+					if(fabric_load_failed) {
+						Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+							BasicText(text = "Could not load the Fabric versions. Check your internet connection.", style = QuantumTextStyles.error)
+							QuantumButton(text = "Retry", style = ButtonStyle.SECONDARY, onClick = { fabric_retry_count += 1 })
+						}
+					} else if(loaded_fabric_versions != null) {
+						BasicText(text = "Fabric is not available for `$resolved_game_version`.", style = QuantumTextStyles.error)
+					} else if(resolved_game_version == null) {
+						BasicText(text = "Waiting for the version list…", style = QuantumTextStyles.body)
+					} else {
+						BasicText(text = "Loading the Fabric versions…", style = QuantumTextStyles.body)
 					}
 				}
 			}
@@ -162,6 +229,7 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 					val final_name = instance_name.trimEnd()
 					val taken_names = InstanceStore.loadForEdition(edition).map { instance -> instance.name }
 					val name_problem = NameRules.findProblem(final_name, "instance", edition, taken_names)
+					val is_fabric = edition == Edition.JAVA && selected_loader == Loader.FABRIC
 
 					if(name_problem != null) {
 						error_message = name_problem
@@ -169,12 +237,19 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 						error_message = "Wait for the version list to load before creating the instance."
 					} else if(game_version.isBlank()) {
 						error_message = "Enter a game version, or `latest`."
+					} else if(is_fabric && fabric_load_failed) {
+						error_message = "Could not load the Fabric versions. Select `Retry` and try again."
+					} else if(is_fabric && fabric_versions == null) {
+						error_message = "Wait for the Fabric versions to load before creating the instance."
+					} else if(is_fabric && selected_loader_version == null) {
+						error_message = "Fabric is not available for `$resolved_game_version`. Choose a different game version or mod loader."
 					} else {
 						val new_instance = Instance(
 							name = final_name,
 							edition = edition,
 							game_version = game_version.trim(),
 							loader = selected_loader,
+							loader_version = if(is_fabric) selected_loader_version else null,
 							group_id = selected_group_id
 						)
 						InstanceStore.save(new_instance)

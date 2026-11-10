@@ -26,7 +26,8 @@ fun InstanceCard(instance: Instance, is_selected: Boolean, onClick: () -> Unit) 
 	val shape = RoundedCornerShape(10.dp)
 	val border_colour = if(is_selected) QuantumColours.blue else QuantumColours.border
 	val version_name = GameVersions.displayName(instance.game_version)
-	val details = if(instance.edition == Edition.JAVA) "$version_name · ${instance.loader.display_name}" else version_name
+	val loader_name = if(instance.loader_version != null) "${instance.loader.display_name} ${instance.loader_version}" else instance.loader.display_name
+	val details = if(instance.edition == Edition.JAVA) "$version_name · $loader_name" else version_name
 
 	Column(
 		modifier = Modifier
