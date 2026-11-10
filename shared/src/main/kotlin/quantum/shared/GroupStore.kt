@@ -36,6 +36,27 @@ object GroupStore {
 		saveAll(updated_groups)
 	}
 
+	fun rename(group_id: String, new_name: String) {
+		val updated_groups = loadAll().map { group ->
+			if(group.id == group_id) group.copy(name = new_name) else group
+		}
+		saveAll(updated_groups)
+	}
+
+	fun delete(group: Group, delete_instances: Boolean) {
+		val group_instances = InstanceStore.loadAll().filter { instance -> instance.group_id == group.id }
+
+		group_instances.forEach { instance ->
+			if(delete_instances) {
+				InstanceStore.delete(instance)
+			} else {
+				InstanceStore.moveToGroup(instance, null)
+			}
+		}
+
+		saveAll(loadAll().filterNot { other_group -> other_group.id == group.id })
+	}
+
 	private fun saveAll(groups: List<Group>) {
 		val file_text = QuantumJson.json.encodeToString(GroupsFile.serializer(), GroupsFile(groups))
 		Files.writeString(groups_file, file_text)

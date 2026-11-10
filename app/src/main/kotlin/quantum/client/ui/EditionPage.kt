@@ -33,12 +33,19 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 	var instances by remember(edition) { mutableStateOf(InstanceStore.loadForEdition(edition)) }
 	var groups by remember(edition) { mutableStateOf(GroupStore.loadForEdition(edition)) }
 	var selected_instance_id by remember(edition) { mutableStateOf<String?>(null) }
+	var managed_group_id by remember(edition) { mutableStateOf<String?>(null) }
 	var is_confirming_delete by remember(edition) { mutableStateOf(false) }
 
 	val selected_instance = instances.firstOrNull { instance -> instance.id == selected_instance_id }
+	val managed_group = groups.firstOrNull { group -> group.id == managed_group_id }
 	val group_ids = groups.map { group -> group.id }.toSet()
 	val loose_instances = instances.filter { instance -> instance.group_id == null || instance.group_id !in group_ids }
 	val group_options = listOf(DropdownOption<String?>(null, "No group")) + groups.map { group -> DropdownOption<String?>(group.id, group.name) }
+
+	fun reload() {
+		instances = InstanceStore.loadForEdition(edition)
+		groups = GroupStore.loadForEdition(edition)
+	}
 
 	fun clearSelection() {
 		selected_instance_id = null
@@ -48,6 +55,12 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 	fun toggleSelection(instance: Instance) {
 		selected_instance_id = if(selected_instance_id == instance.id) null else instance.id
 		is_confirming_delete = false
+		managed_group_id = null
+	}
+
+	fun toggleManagedGroup(group_id: String) {
+		managed_group_id = if(managed_group_id == group_id) null else group_id
+		clearSelection()
 	}
 
 	fun moveSelectedInstance(group_id: String?) {
@@ -122,7 +135,8 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 								GroupHeading(
 									group = group,
 									instance_count = group_instances.size,
-									onClick = {
+									is_managed = group.id == managed_group_id,
+									onToggleCollapsed = {
 										val will_collapse = !group.is_collapsed
 										GroupStore.setCollapsed(group.id, will_collapse)
 										groups = GroupStore.loadForEdition(edition)
@@ -130,7 +144,8 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 										if(will_collapse && selected_instance?.group_id == group.id) {
 											clearSelection()
 										}
-									}
+									},
+									onManage = { toggleManagedGroup(group.id) }
 								)
 							}
 
@@ -153,7 +168,18 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 					}
 				}
 
-				if(selected_instance != null) {
+				if(managed_group != null) {
+					GroupActions(
+						group = managed_group,
+						instance_count = instances.count { instance -> instance.group_id == managed_group.id },
+						taken_names = groups.filter { group -> group.id != managed_group.id }.map { group -> group.name },
+						onChanged = {
+							reload()
+							clearSelection()
+						},
+						onClose = { managed_group_id = null }
+					)
+				} else if(selected_instance != null) {
 					Row(
 						modifier = Modifier.fillMaxWidth(),
 						horizontalArrangement = Arrangement.spacedBy(10.dp),
