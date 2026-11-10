@@ -21,7 +21,7 @@ data class PreloadStatus(
 )
 
 object LoaderPreloader {
-	private const val worker_count = 8
+	private const val worker_count = 16
 
 	private val preload_loaders = Loader.entries.filter { loader -> LoaderVersionStore.hasVersionList(loader) }
 	private val states = ConcurrentHashMap<Loader, PreloadState>()

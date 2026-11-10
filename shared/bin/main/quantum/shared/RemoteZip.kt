@@ -12,6 +12,7 @@ object RemoteZip {
 	private const val directory_entry_size = 46
 	private const val local_header_size = 30
 	private const val max_comment_size = 65535
+	private const val local_extra_margin = 1024
 	private const val zip64_marker = 0xFFFFFFFFL
 
 	fun readEntry(url: String, entry_name: String): ByteArray? {
@@ -38,12 +39,25 @@ object RemoteZip {
 		val directory_bytes = remote_file.read(directory_offset, directory_size.toInt())
 		val entry = findDirectoryEntry(directory_bytes, entry_name) ?: return null
 
-		val local_header = ByteBuffer.wrap(remote_file.read(entry.local_header_offset, local_header_size)).order(ByteOrder.LITTLE_ENDIAN)
-		val name_length = java.lang.Short.toUnsignedInt(local_header.getShort(26))
-		val extra_length = java.lang.Short.toUnsignedInt(local_header.getShort(28))
-		val data_start = entry.local_header_offset + local_header_size + name_length + extra_length
+		val expected_length = minOf(
+			local_header_size.toLong() + entry.name_length + entry.extra_length + entry.compressed_size + local_extra_margin,
+			remote_file.size - entry.local_header_offset
+		).toInt()
 
-		val compressed_bytes = remote_file.read(data_start, entry.compressed_size.toInt())
+		val entry_block = remote_file.read(entry.local_header_offset, expected_length)
+		val local_header = ByteBuffer.wrap(entry_block).order(ByteOrder.LITTLE_ENDIAN)
+		val local_name_length = java.lang.Short.toUnsignedInt(local_header.getShort(26))
+		val local_extra_length = java.lang.Short.toUnsignedInt(local_header.getShort(28))
+
+		val data_offset = local_header_size + local_name_length + local_extra_length
+		val data_end = data_offset + entry.compressed_size
+
+		val compressed_bytes = if(data_end <= entry_block.size) {
+			entry_block.copyOfRange(data_offset, data_end.toInt())
+		} else {
+			remote_file.read(entry.local_header_offset + data_offset, entry.compressed_size.toInt())
+		}
+
 		return decompress(compressed_bytes, entry, url)
 	}
 
@@ -51,17 +65,19 @@ object RemoteZip {
 		val compression_method: Int,
 		val compressed_size: Long,
 		val uncompressed_size: Long,
-		val local_header_offset: Long
+		val local_header_offset: Long,
+		val name_length: Int,
+		val extra_length: Int
 	)
 
 	private class RemoteFile(private val url: String, private val tail: HttpBytes) {
-		private val total_size: Long = if(tail.status_code == 200) {
+		val size: Long = if(tail.status_code == 200) {
 			tail.body.size.toLong()
 		} else {
 			tail.total_size ?: throw IOException("`$url` did not report its size.")
 		}
 
-		private val tail_start: Long = total_size - tail.body.size
+		private val tail_start: Long = size - tail.body.size
 
 		fun read(start: Long, length: Int): ByteArray {
 			if(length == 0) {
@@ -96,7 +112,9 @@ object RemoteZip {
 					compression_method = java.lang.Short.toUnsignedInt(buffer.getShort(position + 10)),
 					compressed_size = Integer.toUnsignedLong(buffer.getInt(position + 20)),
 					uncompressed_size = Integer.toUnsignedLong(buffer.getInt(position + 24)),
-					local_header_offset = Integer.toUnsignedLong(buffer.getInt(position + 42))
+					local_header_offset = Integer.toUnsignedLong(buffer.getInt(position + 42)),
+					name_length = name_length,
+					extra_length = extra_length
 				)
 			}
 

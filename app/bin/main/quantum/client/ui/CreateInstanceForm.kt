@@ -54,7 +54,7 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	var version_type_filter by remember { mutableStateOf<VersionType?>(null) }
 
 	var supported_game_versions by remember { mutableStateOf<Set<String>?>(null) }
-	var supported_versions_ready by remember { mutableStateOf(false) }
+	var supported_ready_for by remember { mutableStateOf<Loader?>(null) }
 	var supported_status by remember { mutableStateOf<PreloadStatus?>(null) }
 
 	var loader_versions by remember { mutableStateOf<List<LoaderVersion>?>(null) }
@@ -63,11 +63,11 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	var selected_loader_version by remember { mutableStateOf<String?>(null) }
 
 	val loaded_manifest = manifest
-	val version_options = remember(loaded_manifest, version_type_filter, supported_game_versions) {
-		if(loaded_manifest != null) versionOptions(loaded_manifest, version_type_filter, supported_game_versions) else emptyList()
+	val is_version_list_ready = loaded_manifest != null && supported_ready_for == selected_loader
+	val version_options = remember(loaded_manifest, version_type_filter, supported_game_versions, is_version_list_ready) {
+		if(loaded_manifest != null && is_version_list_ready) versionOptions(loaded_manifest, version_type_filter, supported_game_versions) else emptyList()
 	}
 	val resolved_game_version = if(loaded_manifest != null) GameVersions.resolve(game_version, loaded_manifest) else null
-	val is_version_list_ready = loaded_manifest != null && supported_versions_ready
 
 	val needs_loader_version = edition == Edition.JAVA && LoaderVersionStore.hasVersionList(selected_loader)
 	val loader_name = selected_loader.display_name
@@ -95,22 +95,22 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 
 	LaunchedEffect(edition, selected_loader) {
 		supported_game_versions = null
-		supported_versions_ready = false
+		supported_ready_for = null
 		supported_status = null
 
 		if(edition == Edition.JAVA) {
 			if(!LoaderVersionStore.hasVersionList(selected_loader)) {
-				supported_versions_ready = true
+				supported_ready_for = selected_loader
 			} else {
 				LoaderPreloader.prioritise(selected_loader)
 
-				while(!supported_versions_ready) {
+				while(supported_ready_for != selected_loader) {
 					val current_status = LoaderPreloader.status(selected_loader)
 					supported_status = current_status
 
 					if(current_status.state == PreloadState.READY) {
 						supported_game_versions = withContext(Dispatchers.IO) { LoaderVersionStore.loadSupportedGameVersions(selected_loader) }
-						supported_versions_ready = true
+						supported_ready_for = selected_loader
 					} else {
 						delay(250)
 					}
@@ -125,12 +125,12 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 		}
 	}
 
-	LaunchedEffect(selected_loader, resolved_game_version, supported_versions_ready, loader_retry_count) {
+	LaunchedEffect(selected_loader, resolved_game_version, supported_ready_for, loader_retry_count) {
 		loader_versions = null
 		loader_load_failed = false
 		selected_loader_version = null
 
-		if(needs_loader_version && supported_versions_ready && resolved_game_version != null) {
+		if(needs_loader_version && supported_ready_for == selected_loader && resolved_game_version != null) {
 			try {
 				val fetched_versions = withContext(Dispatchers.IO) { LoaderVersionStore.fetchVersions(selected_loader, resolved_game_version) }
 				loader_versions = fetched_versions
