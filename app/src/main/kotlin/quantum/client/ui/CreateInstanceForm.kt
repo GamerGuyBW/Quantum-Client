@@ -8,6 +8,7 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -18,11 +19,13 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import quantum.shared.Edition
+import quantum.shared.GameVersions
 import quantum.shared.GroupStore
 import quantum.shared.Instance
 import quantum.shared.InstanceStore
 import quantum.shared.Loader
 import quantum.shared.NameRules
+import quantum.shared.VersionManifest
 import quantum.shared.VersionStore
 
 @Composable
@@ -31,21 +34,30 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	val group_options = listOf(DropdownOption<String?>(null, "No group")) + groups.map { group -> DropdownOption<String?>(group.id, group.name) }
 
 	var instance_name by remember { mutableStateOf("") }
-	var game_version by remember { mutableStateOf("latest") }
+	var game_version by remember { mutableStateOf(if(edition == Edition.JAVA) GameVersions.latest_release else "latest") }
 	var selected_loader by remember { mutableStateOf(Loader.VANILLA) }
 	var selected_group_id by remember { mutableStateOf<String?>(null) }
 	var error_message by remember { mutableStateOf<String?>(null) }
-	var version_status by remember { mutableStateOf("Loading the version list…") }
 
-	LaunchedEffect(edition) {
+	var manifest by remember { mutableStateOf<VersionManifest?>(null) }
+	var version_load_failed by remember { mutableStateOf(false) }
+	var retry_count by remember { mutableIntStateOf(0) }
+
+	val loaded_manifest = manifest
+	val version_options = remember(loaded_manifest) {
+		if(loaded_manifest != null) versionOptions(loaded_manifest) else emptyList()
+	}
+
+	LaunchedEffect(edition, retry_count) {
 		if(edition == Edition.JAVA) {
-			version_status = try {
-				val manifest = withContext(Dispatchers.IO) { VersionStore.fetchManifest() }
-				"Found ${manifest.versions.size} versions. Latest release `${manifest.latest.release}`, latest snapshot `${manifest.latest.snapshot}`."
+			version_load_failed = false
+
+			try {
+				manifest = withContext(Dispatchers.IO) { VersionStore.fetchManifest() }
 			} catch(error: CancellationException) {
 				throw error
 			} catch(error: Exception) {
-				"Could not load the version list. Check your internet connection."
+				version_load_failed = true
 			}
 		}
 	}
@@ -62,7 +74,32 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 			}
 		)
 
-		Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+		if(edition == Edition.JAVA) {
+			if(loaded_manifest != null) {
+				QuantumDropdown(
+					label = "Game version",
+					options = version_options,
+					selected_value = game_version,
+					onValueSelected = { version_id ->
+						game_version = version_id
+						error_message = null
+					}
+				)
+			} else {
+				Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+					BasicText(text = "Game version", style = QuantumTextStyles.label)
+
+					if(version_load_failed) {
+						Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+							BasicText(text = "Could not load the version list. Check your internet connection.", style = QuantumTextStyles.error)
+							QuantumButton(text = "Retry", style = ButtonStyle.SECONDARY, onClick = { retry_count += 1 })
+						}
+					} else {
+						BasicText(text = "Loading the version list…", style = QuantumTextStyles.body)
+					}
+				}
+			}
+		} else {
 			QuantumTextField(
 				label = "Game version",
 				value = game_version,
@@ -71,10 +108,6 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 					error_message = null
 				}
 			)
-
-			if(edition == Edition.JAVA) {
-				BasicText(text = version_status, style = QuantumTextStyles.label)
-			}
 		}
 
 		if(edition == Edition.JAVA) {
@@ -112,6 +145,8 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 
 					if(name_problem != null) {
 						error_message = name_problem
+					} else if(edition == Edition.JAVA && manifest == null) {
+						error_message = "Wait for the version list to load before creating the instance."
 					} else if(game_version.isBlank()) {
 						error_message = "Enter a game version, or `latest`."
 					} else {
@@ -136,4 +171,20 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 			}
 		}
 	}
+}
+
+private fun versionOptions(manifest: VersionManifest): List<DropdownOption<String>> {
+	val latest_options = listOf(
+		DropdownOption(GameVersions.latest_release, "Latest Release (${manifest.latest.release})"),
+		DropdownOption(GameVersions.latest_snapshot, "Latest Snapshot (${manifest.latest.snapshot})")
+	)
+
+	val replaced_ids = setOf(manifest.latest.release, manifest.latest.snapshot)
+
+	val other_options = manifest.versions
+		.filter { version -> version.id !in replaced_ids }
+		.sortedByDescending { version -> version.release_time }
+		.map { version -> DropdownOption(version.id, version.id) }
+
+	return latest_options + other_options
 }

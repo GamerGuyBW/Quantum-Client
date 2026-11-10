@@ -18,13 +18,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import quantum.shared.Edition
+import quantum.shared.GameVersions
 import quantum.shared.Instance
 
 @Composable
 fun InstanceCard(instance: Instance, is_selected: Boolean, onClick: () -> Unit) {
 	val shape = RoundedCornerShape(10.dp)
 	val border_colour = if(is_selected) QuantumColours.blue else QuantumColours.border
-	val details = if(instance.edition == Edition.JAVA) "${instance.game_version} · ${instance.loader.display_name}" else instance.game_version
+	val version_name = GameVersions.displayName(instance.game_version)
+	val details = if(instance.edition == Edition.JAVA) "$version_name · ${instance.loader.display_name}" else version_name
 
 	Column(
 		modifier = Modifier
