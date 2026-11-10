@@ -7,6 +7,8 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
 
+class HttpStatusException(val status_code: Int, url: String) : IOException("`$url` returned status `$status_code`.")
+
 object QuantumHttp {
 	private val http_client: HttpClient = HttpClient.newBuilder()
 		.connectTimeout(Duration.ofSeconds(10))
@@ -23,7 +25,7 @@ object QuantumHttp {
 		val response = http_client.send(request, HttpResponse.BodyHandlers.ofString())
 
 		if(response.statusCode() != 200) {
-			throw IOException("`$url` returned status `${response.statusCode()}`.")
+			throw HttpStatusException(response.statusCode(), url)
 		}
 
 		return response.body()
