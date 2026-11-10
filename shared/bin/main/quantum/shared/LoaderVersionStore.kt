@@ -5,6 +5,7 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import org.xml.sax.InputSource
 
@@ -15,13 +16,16 @@ object LoaderVersionStore {
 	private const val quilt_game_url = "https://meta.quiltmc.org/v3/versions/game"
 	private const val neoforge_maven_url = "https://maven.neoforged.net/releases/net/neoforged/neoforge/"
 	private const val legacy_neoforge_maven_url = "https://maven.neoforged.net/releases/net/neoforged/forge/"
+	private const val forge_maven_url = "https://maven.minecraftforge.net/releases/net/minecraftforge/forge/"
+	private const val forge_mapping_url = "https://files.minecraftforge.net/net/minecraftforge/forge/maven-metadata.json"
+	private const val forge_promotions_url = "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json"
 
 	fun hasVersionList(loader: Loader): Boolean {
-		return loader == Loader.FABRIC || loader == Loader.QUILT || loader == Loader.NEOFORGE
+		return loader == Loader.FABRIC || loader == Loader.QUILT || loader == Loader.FORGE || loader == Loader.NEOFORGE
 	}
 
 	fun usesInstallerChecks(loader: Loader): Boolean {
-		return loader == Loader.NEOFORGE
+		return loader == Loader.FORGE || loader == Loader.NEOFORGE
 	}
 
 	fun downloadSupportedGameVersions(loader: Loader) {
@@ -45,14 +49,14 @@ object LoaderVersionStore {
 		return when(loader) {
 			Loader.FABRIC -> fetchFabricVersions(game_version_id)
 			Loader.QUILT -> fetchQuiltVersions(game_version_id)
-			Loader.NEOFORGE -> fetchMappedVersions(loader, game_version_id)
+			Loader.FORGE, Loader.NEOFORGE -> fetchMappedVersions(loader, game_version_id)
 			else -> emptyList()
 		}
 	}
 
 	fun verifyGameVersion(loader: Loader, loader_version: LoaderVersion, expected_game_version: String): String? {
 		val installer_url = loader_version.installer_url ?: return null
-		val actual_game_version = InstallerInfo.minecraftVersion(installer_url)
+		val actual_game_version = InstallerInfo.minecraftVersion(installer_url) ?: publishedGameVersion(loader, loader_version.version)
 
 		if(actual_game_version == expected_game_version) {
 			return null
@@ -62,7 +66,7 @@ object LoaderVersionStore {
 		writeSupportedFromDatabase(loader)
 
 		return if(actual_game_version == null) {
-			"${loader.display_name} `${loader_version.display_name}` no longer has an installer. The version lists have been corrected, so choose again."
+			"${loader.display_name} `${loader_version.display_name}` is no longer available. The version lists have been corrected, so choose again."
 		} else {
 			"${loader.display_name} `${loader_version.display_name}` is for Minecraft `$actual_game_version`, not `$expected_game_version`. The version lists have been corrected, so choose again."
 		}
@@ -75,6 +79,7 @@ object LoaderVersionStore {
 		}
 
 		val artifacts = when(loader) {
+			Loader.FORGE -> mavenArtifactList(forge_maven_url, "forge")
 			Loader.NEOFORGE -> mavenArtifactList(legacy_neoforge_maven_url, "forge") + mavenArtifactList(neoforge_maven_url, "neoforge")
 			else -> emptyList()
 		}
@@ -84,13 +89,42 @@ object LoaderVersionStore {
 	}
 
 	internal fun checkInstaller(loader: Loader, artifact: MavenArtifact) {
-		val minecraft_version = InstallerInfo.minecraftVersion(artifact.installer_url)
+		val minecraft_version = InstallerInfo.minecraftVersion(artifact.installer_url) ?: publishedGameVersion(loader, artifact.version)
 		VersionDatabase.record(loader, artifact.version, minecraft_version)
 	}
 
 	internal fun writeSupportedFromDatabase(loader: Loader) {
 		val supported_versions = VersionDatabase.load(loader).values.filterNotNull().toSet()
 		saveSupportedGameVersions(loader, supported_versions)
+	}
+
+	private fun publishedGameVersion(loader: Loader, loader_version: String): String? {
+		if(loader != Loader.FORGE) {
+			return null
+		}
+
+		val mapping_text = QuantumCache.textOrFetch("forge_version_mapping.json", forge_mapping_url)
+		val version_mapping = QuantumJson.json.decodeFromString(MapSerializer(String.serializer(), ListSerializer(String.serializer())), mapping_text)
+
+		return version_mapping.entries.firstOrNull { (_, forge_versions) -> loader_version in forge_versions }?.key
+	}
+
+	private fun recommendedVersion(loader: Loader, game_version_id: String): String? {
+		if(loader != Loader.FORGE) {
+			return null
+		}
+
+		val promotions_text = QuantumCache.textOrFetch("forge_promotions.json", forge_promotions_url)
+		val promotions = QuantumJson.json.decodeFromString(ForgePromotions.serializer(), promotions_text)
+
+		return promotions.promos["$game_version_id-recommended"]
+	}
+
+	private fun isStable(loader: Loader, display_name: String): Boolean {
+		return when(loader) {
+			Loader.FORGE -> true
+			else -> !SemanticVersions.isPreRelease(display_name)
+		}
 	}
 
 	private fun saveSupportedGameVersions(loader: Loader, supported_versions: Set<String>) {
@@ -118,13 +152,21 @@ object LoaderVersionStore {
 
 	private fun fetchMappedVersions(loader: Loader, game_version_id: String): List<LoaderVersion> {
 		val database_results = VersionDatabase.load(loader)
+		val recommended_version = recommendedVersion(loader, game_version_id)
 
 		return mavenArtifacts(loader)
 			.asReversed()
 			.filter { artifact -> database_results[artifact.version] == game_version_id }
 			.map { artifact ->
 				val display_name = artifact.version.removePrefix("$game_version_id-")
-				LoaderVersion(artifact.version, display_name, !SemanticVersions.isPreRelease(display_name), artifact.installer_url)
+
+				LoaderVersion(
+					version = artifact.version,
+					display_name = display_name,
+					is_stable = isStable(loader, display_name),
+					installer_url = artifact.installer_url,
+					is_recommended = display_name == recommended_version
+				)
 			}
 	}
 

@@ -23,10 +23,10 @@ data class SetupTaskStatus(
 
 object VersionSetup {
 	private const val workers_per_loader = 16
-	private const val minecraft_task_name = "Minecraft versions"
 
+	private val vanilla_task_name = Loader.VANILLA.display_name
 	private val setup_loaders = Loader.entries.filter { loader -> LoaderVersionStore.hasVersionList(loader) }
-	private val task_names = listOf(minecraft_task_name) + setup_loaders.map { loader -> loader.display_name }
+	private val task_names = listOf(vanilla_task_name) + setup_loaders.map { loader -> loader.display_name }
 	private val states = ConcurrentHashMap<String, SetupTaskState>()
 	private val checked_counts = ConcurrentHashMap<String, AtomicInteger>()
 	private val total_counts = ConcurrentHashMap<String, Int>()
@@ -48,7 +48,7 @@ object VersionSetup {
 			total_counts[task_name] = 0
 		}
 
-		submitMinecraftTask()
+		submitVanillaTask()
 		setup_loaders.forEach { loader -> submitLoaderTask(loader) }
 	}
 
@@ -76,8 +76,8 @@ object VersionSetup {
 	}
 
 	fun retryFailed() {
-		if(states[minecraft_task_name] == SetupTaskState.FAILED) {
-			submitMinecraftTask()
+		if(states[vanilla_task_name] == SetupTaskState.FAILED) {
+			submitVanillaTask()
 		}
 
 		setup_loaders
@@ -85,13 +85,13 @@ object VersionSetup {
 			.forEach { loader -> submitLoaderTask(loader) }
 	}
 
-	private fun submitMinecraftTask() {
+	private fun submitVanillaTask() {
 		val current_executor = executor ?: return
-		states[minecraft_task_name] = SetupTaskState.WAITING
+		states[vanilla_task_name] = SetupTaskState.WAITING
 
 		current_executor.submit {
-			states[minecraft_task_name] = SetupTaskState.RUNNING
-			states[minecraft_task_name] = try {
+			states[vanilla_task_name] = SetupTaskState.RUNNING
+			states[vanilla_task_name] = try {
 				VersionStore.fetchManifest()
 				SetupTaskState.DONE
 			} catch(error: Exception) {

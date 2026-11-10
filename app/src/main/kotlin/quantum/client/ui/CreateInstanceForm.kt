@@ -75,7 +75,13 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	val loaded_loader_versions = loader_versions
 	val loader_version_options = remember(loaded_loader_versions) {
 		loaded_loader_versions.orEmpty().map { loader_version ->
-			val label = if(loader_version.is_stable) loader_version.display_name else "${loader_version.display_name} (unstable)"
+			val label = if(loader_version.is_recommended) {
+				"${loader_version.display_name} (recommended)"
+			} else if(!loader_version.is_stable) {
+				"${loader_version.display_name} (unstable)"
+			} else {
+				loader_version.display_name
+			}
 			DropdownOption<String?>(loader_version.version, label)
 		}
 	}
@@ -131,7 +137,9 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 				val fetched_versions = withContext(Dispatchers.IO) { LoaderVersionStore.fetchVersions(selected_loader, resolved_game_version) }
 				loader_versions = fetched_versions
 
-				val default_version = fetched_versions.firstOrNull { loader_version -> loader_version.is_stable } ?: fetched_versions.firstOrNull()
+				val default_version = fetched_versions.firstOrNull { loader_version -> loader_version.is_recommended }
+					?: fetched_versions.firstOrNull { loader_version -> loader_version.is_stable }
+					?: fetched_versions.firstOrNull()
 				selected_loader_version = default_version?.version
 			} catch(error: CancellationException) {
 				throw error

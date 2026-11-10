@@ -6,7 +6,8 @@ data class LoaderVersion(
 	val version: String,
 	val display_name: String,
 	val is_stable: Boolean,
-	val installer_url: String? = null
+	val installer_url: String? = null,
+	val is_recommended: Boolean = false
 )
 
 @Serializable
@@ -45,4 +46,9 @@ internal data class QuiltLoaderEntry(
 @Serializable
 internal data class QuiltLoaderInfo(
 	val version: String
+)
+
+@Serializable
+internal data class ForgePromotions(
+	val promos: Map<String, String> = emptyMap()
 )
