@@ -3,13 +3,9 @@ package quantum.shared
 import java.io.StringReader
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import java.util.Collections
-import java.util.concurrent.Callable
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicInteger
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import org.xml.sax.InputSource
 
 object LoaderVersionStore {
@@ -19,31 +15,30 @@ object LoaderVersionStore {
 	private const val quilt_game_url = "https://meta.quiltmc.org/v3/versions/game"
 	private const val neoforge_maven_url = "https://maven.neoforged.net/releases/net/neoforged/neoforge/"
 	private const val legacy_neoforge_maven_url = "https://maven.neoforged.net/releases/net/neoforged/forge/"
-	private const val installer_check_threads = 8
-
-	private val supported_game_versions_cache = ConcurrentHashMap<Loader, Set<String>>()
-	private val maven_artifacts_cache = ConcurrentHashMap<Loader, List<MavenArtifact>>()
-	private val game_version_maps = ConcurrentHashMap<Loader, Map<String, String?>>()
 
 	fun hasVersionList(loader: Loader): Boolean {
 		return loader == Loader.FABRIC || loader == Loader.QUILT || loader == Loader.NEOFORGE
 	}
 
-	fun fetchSupportedGameVersions(loader: Loader, onProgress: (Int, Int) -> Unit = { _, _ -> }): Set<String>? {
-		val cached_versions = supported_game_versions_cache[loader]
-		if(cached_versions != null) {
-			return cached_versions
+	fun usesInstallerChecks(loader: Loader): Boolean {
+		return loader == Loader.NEOFORGE
+	}
+
+	fun downloadSupportedGameVersions(loader: Loader) {
+		val game_list_url = when(loader) {
+			Loader.FABRIC -> fabric_game_url
+			Loader.QUILT -> quilt_game_url
+			else -> throw IllegalArgumentException("`${loader.display_name}` does not publish a supported version list.")
 		}
 
-		val supported_versions = when(loader) {
-			Loader.FABRIC -> fetchGameVersionList(fabric_game_url)
-			Loader.QUILT -> fetchGameVersionList(quilt_game_url)
-			Loader.NEOFORGE -> gameVersionMap(loader, onProgress).values.filterNotNull().toSet()
-			else -> return null
-		}
+		val file_text = QuantumHttp.fetchText(game_list_url)
+		val entries = QuantumJson.json.decodeFromString(ListSerializer(LoaderGameVersion.serializer()), file_text)
+		saveSupportedGameVersions(loader, entries.map { entry -> entry.version }.toSet())
+	}
 
-		supported_game_versions_cache[loader] = supported_versions
-		return supported_versions
+	fun loadSupportedGameVersions(loader: Loader): Set<String>? {
+		val file_text = QuantumCache.readText(supportedFileName(loader)) ?: return null
+		return QuantumJson.json.decodeFromString(ListSerializer(String.serializer()), file_text).toSet()
 	}
 
 	fun fetchVersions(loader: Loader, game_version_id: String): List<LoaderVersion> {
@@ -55,83 +50,10 @@ object LoaderVersionStore {
 		}
 	}
 
-	private fun fetchGameVersionList(url: String): Set<String> {
-		val file_text = QuantumHttp.fetchText(url)
-		val entries = QuantumJson.json.decodeFromString(ListSerializer(LoaderGameVersion.serializer()), file_text)
-		return entries.map { entry -> entry.version }.toSet()
-	}
-
-	private fun fetchFabricVersions(game_version_id: String): List<LoaderVersion> {
-		val file_text = QuantumHttp.fetchText(fabric_loader_url + encodeForPath(game_version_id))
-		val entries = QuantumJson.json.decodeFromString(ListSerializer(FabricLoaderEntry.serializer()), file_text)
-		return entries.map { entry -> LoaderVersion(entry.loader.version, entry.loader.version, entry.loader.stable) }
-	}
-
-	private fun fetchQuiltVersions(game_version_id: String): List<LoaderVersion> {
-		val file_text = QuantumHttp.fetchText(quilt_loader_url + encodeForPath(game_version_id))
-		val entries = QuantumJson.json.decodeFromString(ListSerializer(QuiltLoaderEntry.serializer()), file_text)
-		return entries.map { entry ->
-			LoaderVersion(entry.loader.version, entry.loader.version, !SemanticVersions.isPreRelease(entry.loader.version))
-		}
-	}
-
-	private fun fetchMappedVersions(loader: Loader, game_version_id: String): List<LoaderVersion> {
-		val game_version_map = gameVersionMap(loader) { _, _ -> }
-
-		return mavenArtifacts(loader)
-			.asReversed()
-			.filter { artifact -> game_version_map[artifact.version] == game_version_id }
-			.map { artifact ->
-				val display_name = artifact.version.removePrefix("$game_version_id-")
-				LoaderVersion(artifact.version, display_name, !SemanticVersions.isPreRelease(display_name))
-			}
-	}
-
-	private fun gameVersionMap(loader: Loader, onProgress: (Int, Int) -> Unit): Map<String, String?> {
-		val cached_map = game_version_maps[loader]
-		if(cached_map != null) {
-			return cached_map
-		}
-
-		val resolved_map = resolveGameVersions(loader, mavenArtifacts(loader), onProgress)
-		game_version_maps[loader] = resolved_map
-		return resolved_map
-	}
-
-	private fun resolveGameVersions(loader: Loader, artifacts: List<MavenArtifact>, onProgress: (Int, Int) -> Unit): Map<String, String?> {
-		val results = Collections.synchronizedMap(HashMap(LoaderGameVersionCache.load(loader)))
-		val unchecked_artifacts = artifacts.filter { artifact -> !results.containsKey(artifact.version) }
-		val checked_count = AtomicInteger(artifacts.size - unchecked_artifacts.size)
-
-		onProgress(checked_count.get(), artifacts.size)
-
-		if(unchecked_artifacts.isEmpty()) {
-			return HashMap(results)
-		}
-
-		val executor = Executors.newFixedThreadPool(installer_check_threads)
-
-		try {
-			val tasks = unchecked_artifacts.map { artifact ->
-				Callable {
-					results[artifact.version] = InstallerInfo.minecraftVersion(artifact.installer_url)
-					onProgress(checked_count.incrementAndGet(), artifacts.size)
-				}
-			}
-
-			executor.invokeAll(tasks).forEach { future -> future.get() }
-		} finally {
-			executor.shutdownNow()
-			LoaderGameVersionCache.save(loader, HashMap(results))
-		}
-
-		return HashMap(results)
-	}
-
-	private fun mavenArtifacts(loader: Loader): List<MavenArtifact> {
-		val cached_artifacts = maven_artifacts_cache[loader]
-		if(cached_artifacts != null) {
-			return cached_artifacts
+	internal fun mavenArtifacts(loader: Loader): List<MavenArtifact> {
+		val cached_text = QuantumCache.readText(artifactsFileName(loader))
+		if(cached_text != null) {
+			return QuantumJson.json.decodeFromString(ListSerializer(MavenArtifact.serializer()), cached_text)
 		}
 
 		val artifacts = when(loader) {
@@ -139,8 +61,60 @@ object LoaderVersionStore {
 			else -> emptyList()
 		}
 
-		maven_artifacts_cache[loader] = artifacts
+		QuantumCache.writeText(artifactsFileName(loader), QuantumJson.json.encodeToString(ListSerializer(MavenArtifact.serializer()), artifacts))
 		return artifacts
+	}
+
+	internal fun checkedInstallerResults(loader: Loader): Map<String, String?> {
+		return QuantumCache.readLines(resultsFileName(loader))
+			.map { line -> QuantumJson.compact_json.decodeFromString(InstallerResult.serializer(), line) }
+			.associate { result -> result.version to result.minecraft_version }
+	}
+
+	internal fun checkInstaller(loader: Loader, artifact: MavenArtifact) {
+		val minecraft_version = InstallerInfo.minecraftVersion(artifact.installer_url)
+		val result_line = QuantumJson.compact_json.encodeToString(InstallerResult.serializer(), InstallerResult(artifact.version, minecraft_version))
+		QuantumCache.appendLine(resultsFileName(loader), result_line)
+	}
+
+	internal fun finishInstallerChecks(loader: Loader) {
+		val supported_versions = checkedInstallerResults(loader).values.filterNotNull().toSet()
+		saveSupportedGameVersions(loader, supported_versions)
+	}
+
+	private fun saveSupportedGameVersions(loader: Loader, supported_versions: Set<String>) {
+		val file_text = QuantumJson.json.encodeToString(ListSerializer(String.serializer()), supported_versions.toList())
+		QuantumCache.writeText(supportedFileName(loader), file_text)
+	}
+
+	private fun fetchFabricVersions(game_version_id: String): List<LoaderVersion> {
+		val cache_name = "loader_versions_fabric_${QuantumCache.safeName(game_version_id)}.json"
+		val file_text = QuantumCache.textOrFetch(cache_name, fabric_loader_url + encodeForPath(game_version_id))
+		val entries = QuantumJson.json.decodeFromString(ListSerializer(FabricLoaderEntry.serializer()), file_text)
+
+		return entries.map { entry -> LoaderVersion(entry.loader.version, entry.loader.version, entry.loader.stable) }
+	}
+
+	private fun fetchQuiltVersions(game_version_id: String): List<LoaderVersion> {
+		val cache_name = "loader_versions_quilt_${QuantumCache.safeName(game_version_id)}.json"
+		val file_text = QuantumCache.textOrFetch(cache_name, quilt_loader_url + encodeForPath(game_version_id))
+		val entries = QuantumJson.json.decodeFromString(ListSerializer(QuiltLoaderEntry.serializer()), file_text)
+
+		return entries.map { entry ->
+			LoaderVersion(entry.loader.version, entry.loader.version, !SemanticVersions.isPreRelease(entry.loader.version))
+		}
+	}
+
+	private fun fetchMappedVersions(loader: Loader, game_version_id: String): List<LoaderVersion> {
+		val installer_results = checkedInstallerResults(loader)
+
+		return mavenArtifacts(loader)
+			.asReversed()
+			.filter { artifact -> installer_results[artifact.version] == game_version_id }
+			.map { artifact ->
+				val display_name = artifact.version.removePrefix("$game_version_id-")
+				LoaderVersion(artifact.version, display_name, !SemanticVersions.isPreRelease(display_name))
+			}
 	}
 
 	private fun mavenArtifactList(base_url: String, artifact_name: String): List<MavenArtifact> {
@@ -159,6 +133,18 @@ object LoaderVersionStore {
 		val version_nodes = document.getElementsByTagName("version")
 
 		return (0 until version_nodes.length).map { index -> version_nodes.item(index).textContent.trim() }
+	}
+
+	private fun supportedFileName(loader: Loader): String {
+		return "supported_game_versions_${loader.name.lowercase()}.json"
+	}
+
+	private fun artifactsFileName(loader: Loader): String {
+		return "maven_artifacts_${loader.name.lowercase()}.json"
+	}
+
+	private fun resultsFileName(loader: Loader): String {
+		return "installer_results_${loader.name.lowercase()}.jsonl"
 	}
 
 	private fun encodeForPath(game_version_id: String): String {

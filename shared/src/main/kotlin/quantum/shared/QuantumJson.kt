@@ -9,4 +9,9 @@ object QuantumJson {
 		encodeDefaults = true
 		ignoreUnknownKeys = true
 	}
+
+	val compact_json = Json {
+		encodeDefaults = true
+		ignoreUnknownKeys = true
+	}
 }

@@ -8,9 +8,16 @@ data class LoaderVersion(
 	val is_stable: Boolean
 )
 
+@Serializable
 internal data class MavenArtifact(
 	val version: String,
 	val installer_url: String
+)
+
+@Serializable
+internal data class InstallerResult(
+	val version: String,
+	val minecraft_version: String?
 )
 
 @Serializable

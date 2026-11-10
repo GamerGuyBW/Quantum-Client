@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import quantum.shared.Edition
 import quantum.shared.GameVersions
@@ -25,9 +26,12 @@ import quantum.shared.GroupStore
 import quantum.shared.Instance
 import quantum.shared.InstanceStore
 import quantum.shared.Loader
+import quantum.shared.LoaderPreloader
 import quantum.shared.LoaderVersion
 import quantum.shared.LoaderVersionStore
 import quantum.shared.NameRules
+import quantum.shared.PreloadState
+import quantum.shared.PreloadStatus
 import quantum.shared.VersionManifest
 import quantum.shared.VersionStore
 import quantum.shared.VersionType
@@ -51,9 +55,7 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 
 	var supported_game_versions by remember { mutableStateOf<Set<String>?>(null) }
 	var supported_versions_ready by remember { mutableStateOf(false) }
-	var supported_load_failed by remember { mutableStateOf(false) }
-	var supported_retry_count by remember { mutableIntStateOf(0) }
-	var supported_progress by remember { mutableStateOf<String?>(null) }
+	var supported_status by remember { mutableStateOf<PreloadStatus?>(null) }
 
 	var loader_versions by remember { mutableStateOf<List<LoaderVersion>?>(null) }
 	var loader_load_failed by remember { mutableStateOf(false) }
@@ -91,26 +93,28 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 		}
 	}
 
-	LaunchedEffect(edition, selected_loader, supported_retry_count) {
+	LaunchedEffect(edition, selected_loader) {
 		supported_game_versions = null
 		supported_versions_ready = false
-		supported_load_failed = false
-		supported_progress = null
+		supported_status = null
 
 		if(edition == Edition.JAVA) {
-			val checking_loader_name = selected_loader.display_name
+			if(!LoaderVersionStore.hasVersionList(selected_loader)) {
+				supported_versions_ready = true
+			} else {
+				LoaderPreloader.prioritise(selected_loader)
 
-			try {
-				supported_game_versions = withContext(Dispatchers.IO) {
-					LoaderVersionStore.fetchSupportedGameVersions(selected_loader) { checked_count, total_count ->
-						supported_progress = "Checking $checking_loader_name versions… ${"%,d".format(checked_count)} of ${"%,d".format(total_count)}"
+				while(!supported_versions_ready) {
+					val current_status = LoaderPreloader.status(selected_loader)
+					supported_status = current_status
+
+					if(current_status.state == PreloadState.READY) {
+						supported_game_versions = withContext(Dispatchers.IO) { LoaderVersionStore.loadSupportedGameVersions(selected_loader) }
+						supported_versions_ready = true
+					} else {
+						delay(250)
 					}
 				}
-				supported_versions_ready = true
-			} catch(error: CancellationException) {
-				throw error
-			} catch(error: Exception) {
-				supported_load_failed = true
 			}
 		}
 	}
@@ -121,12 +125,12 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 		}
 	}
 
-	LaunchedEffect(selected_loader, resolved_game_version, loader_retry_count) {
+	LaunchedEffect(selected_loader, resolved_game_version, supported_versions_ready, loader_retry_count) {
 		loader_versions = null
 		loader_load_failed = false
 		selected_loader_version = null
 
-		if(needs_loader_version && resolved_game_version != null) {
+		if(needs_loader_version && supported_versions_ready && resolved_game_version != null) {
 			try {
 				val fetched_versions = withContext(Dispatchers.IO) { LoaderVersionStore.fetchVersions(selected_loader, resolved_game_version) }
 				loader_versions = fetched_versions
@@ -204,21 +208,26 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 				Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
 					BasicText(text = "Game version", style = QuantumTextStyles.label)
 
-					val current_progress = supported_progress
+					val current_status = supported_status
 
 					if(version_load_failed) {
 						Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
 							BasicText(text = "Could not load the version list. Check your internet connection.", style = QuantumTextStyles.error)
 							QuantumButton(text = "Retry", style = ButtonStyle.SECONDARY, onClick = { retry_count += 1 })
 						}
-					} else if(supported_load_failed) {
+					} else if(current_status?.state == PreloadState.FAILED) {
 						Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
 							BasicText(text = "Could not load the versions supported by $loader_name. Check your internet connection.", style = QuantumTextStyles.error)
-							QuantumButton(text = "Retry", style = ButtonStyle.SECONDARY, onClick = { supported_retry_count += 1 })
+							QuantumButton(text = "Retry", style = ButtonStyle.SECONDARY, onClick = { LoaderPreloader.retry(selected_loader) })
 						}
-					} else if(current_progress != null) {
-						BasicText(text = current_progress, style = QuantumTextStyles.body)
-						BasicText(text = "Each version is only checked once. Later visits are instant.", style = QuantumTextStyles.label)
+					} else if(current_status != null && current_status.total_count > 0) {
+						BasicText(
+							text = "Checking $loader_name versions… ${"%,d".format(current_status.checked_count)} of ${"%,d".format(current_status.total_count)}",
+							style = QuantumTextStyles.body
+						)
+						BasicText(text = "Checks continue in the background if you close this form.", style = QuantumTextStyles.label)
+					} else if(current_status?.state == PreloadState.WAITING) {
+						BasicText(text = "Waiting to check $loader_name versions…", style = QuantumTextStyles.body)
 					} else {
 						BasicText(text = "Loading the version list…", style = QuantumTextStyles.body)
 					}
@@ -254,8 +263,6 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 						}
 					} else if(loaded_loader_versions != null) {
 						BasicText(text = "$loader_name is not available for `$resolved_game_version`.", style = QuantumTextStyles.error)
-					} else if(resolved_game_version == null) {
-						BasicText(text = "Waiting for the version list…", style = QuantumTextStyles.body)
 					} else {
 						BasicText(text = "Loading the $loader_name versions…", style = QuantumTextStyles.body)
 					}
