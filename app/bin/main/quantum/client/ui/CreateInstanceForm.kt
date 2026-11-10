@@ -26,6 +26,7 @@ import quantum.shared.Instance
 import quantum.shared.InstanceStore
 import quantum.shared.Loader
 import quantum.shared.LoaderVersion
+import quantum.shared.LoaderVersionNames
 import quantum.shared.LoaderVersionStore
 import quantum.shared.NameRules
 import quantum.shared.VersionManifest
@@ -71,7 +72,8 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	val loaded_loader_versions = loader_versions
 	val loader_version_options = remember(loaded_loader_versions) {
 		loaded_loader_versions.orEmpty().map { loader_version ->
-			val label = if(loader_version.is_stable) loader_version.version else "${loader_version.version} (unstable)"
+			val shown_version = LoaderVersionNames.displayName(loader_version.version)
+			val label = if(loader_version.is_stable) shown_version else "$shown_version (unstable)"
 			DropdownOption<String?>(loader_version.version, label)
 		}
 	}

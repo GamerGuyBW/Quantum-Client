@@ -14,6 +14,9 @@ object LoaderVersionStore {
 	private const val quilt_loader_url = "https://meta.quiltmc.org/v3/versions/loader/"
 	private const val quilt_game_url = "https://meta.quiltmc.org/v3/versions/game"
 	private const val neoforge_metadata_url = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml"
+	private const val legacy_neoforge_metadata_url = "https://maven.neoforged.net/releases/net/neoforged/forge/maven-metadata.xml"
+
+	private val minecraft_prefix = Regex("^(1\\.\\d+(\\.\\d+)?)-")
 
 	private val supported_game_versions_cache = ConcurrentHashMap<Loader, Set<String>>()
 
@@ -73,14 +76,14 @@ object LoaderVersionStore {
 		}
 
 		val entries = QuantumJson.json.decodeFromString(ListSerializer(QuiltLoaderEntry.serializer()), file_text)
-		return entries.map { entry -> LoaderVersion(entry.loader.version, !entry.loader.version.contains("-")) }
+		return entries.map { entry -> LoaderVersion(entry.loader.version, LoaderVersionNames.isStable(entry.loader.version)) }
 	}
 
 	private fun fetchNeoForgeVersions(game_version_id: String): List<LoaderVersion> {
 		return fetchNeoForgeVersionList()
 			.filter { neoforge_version -> neoForgeGameVersion(neoforge_version) == game_version_id }
 			.sortedWith { first_version, second_version -> compareLoaderVersions(second_version, first_version) }
-			.map { neoforge_version -> LoaderVersion(neoforge_version, !neoforge_version.contains("-")) }
+			.map { neoforge_version -> LoaderVersion(neoforge_version, LoaderVersionNames.isStable(neoforge_version)) }
 	}
 
 	private fun fetchNeoForgeVersionList(): List<String> {
@@ -89,14 +92,20 @@ object LoaderVersionStore {
 			return cached_versions
 		}
 
-		val metadata_text = QuantumHttp.fetchText(neoforge_metadata_url)
-		val version_list = parseMavenVersions(metadata_text)
+		val modern_versions = parseMavenVersions(QuantumHttp.fetchText(neoforge_metadata_url))
+		val legacy_versions = parseMavenVersions(QuantumHttp.fetchText(legacy_neoforge_metadata_url))
+		val version_list = modern_versions + legacy_versions
 
 		neoforge_versions_cache = version_list
 		return version_list
 	}
 
 	private fun neoForgeGameVersion(neoforge_version: String): String? {
+		val prefix_match = minecraft_prefix.find(neoforge_version)
+		if(prefix_match != null) {
+			return prefix_match.groupValues[1]
+		}
+
 		val build_tag = neoforge_version.substringAfter("+", "")
 		val number_part = neoforge_version.substringBefore("-").substringBefore("+")
 		val numbers = number_part.split(".").mapNotNull { part -> part.toIntOrNull() }
