@@ -1,5 +1,6 @@
 package quantum.client.ui
 
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -185,7 +188,7 @@ private fun <T> DropdownList(
 				}
 			}
 	) {
-		LazyColumn(state = list_state) {
+		LazyColumn(state = list_state, modifier = Modifier.padding(end = 10.dp)) {
 			itemsIndexed(options) { index, option ->
 				val background_colour = if(index == highlighted_index) QuantumColours.border else Color.Transparent
 				val text_colour = if(option.value == selected_value) QuantumColours.blue else QuantumColours.text_primary
@@ -203,6 +206,16 @@ private fun <T> DropdownList(
 						.padding(horizontal = 12.dp, vertical = 8.dp)
 				)
 			}
+		}
+
+		Box(modifier = Modifier.matchParentSize()) {
+			VerticalScrollbar(
+				adapter = rememberScrollbarAdapter(list_state),
+				modifier = Modifier
+					.align(Alignment.CenterEnd)
+					.fillMaxHeight()
+					.padding(vertical = 4.dp, horizontal = 1.dp)
+			)
 		}
 	}
 }

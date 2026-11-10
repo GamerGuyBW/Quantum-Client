@@ -1,17 +1,21 @@
 package quantum.client.ui
 
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -35,6 +39,8 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 	var selected_instance_id by remember(edition) { mutableStateOf<String?>(null) }
 	var managed_group_id by remember(edition) { mutableStateOf<String?>(null) }
 	var is_confirming_delete by remember(edition) { mutableStateOf(false) }
+
+	val grid_state = remember(edition) { LazyGridState() }
 
 	val selected_instance = instances.firstOrNull { instance -> instance.id == selected_instance_id }
 	val managed_group = groups.firstOrNull { group -> group.id == managed_group_id }
@@ -114,56 +120,66 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 				if(instances.isEmpty() && groups.isEmpty()) {
 					BasicText(text = "No ${edition.display_name} instances yet. Create one to get started.", style = QuantumTextStyles.label)
 				} else {
-					LazyVerticalGrid(
-						columns = GridCells.Adaptive(minSize = 200.dp),
-						modifier = Modifier.weight(1f),
-						horizontalArrangement = Arrangement.spacedBy(10.dp),
-						verticalArrangement = Arrangement.spacedBy(10.dp)
-					) {
-						items(loose_instances, key = { instance -> instance.id }) { instance ->
-							InstanceCard(
-								instance = instance,
-								is_selected = instance.id == selected_instance_id,
-								onClick = { toggleSelection(instance) }
-							)
-						}
-
-						groups.forEach { group ->
-							val group_instances = instances.filter { instance -> instance.group_id == group.id }
-
-							item(key = "group-${group.id}", span = { GridItemSpan(maxLineSpan) }) {
-								GroupHeading(
-									group = group,
-									instance_count = group_instances.size,
-									is_managed = group.id == managed_group_id,
-									onToggleCollapsed = {
-										val will_collapse = !group.is_collapsed
-										GroupStore.setCollapsed(group.id, will_collapse)
-										groups = GroupStore.loadForEdition(edition)
-
-										if(will_collapse && selected_instance?.group_id == group.id) {
-											clearSelection()
-										}
-									},
-									onManage = { toggleManagedGroup(group.id) }
+					Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+						LazyVerticalGrid(
+							columns = GridCells.Adaptive(minSize = 200.dp),
+							state = grid_state,
+							modifier = Modifier.fillMaxSize().padding(end = 14.dp),
+							horizontalArrangement = Arrangement.spacedBy(10.dp),
+							verticalArrangement = Arrangement.spacedBy(10.dp)
+						) {
+							items(loose_instances, key = { instance -> instance.id }) { instance ->
+								InstanceCard(
+									instance = instance,
+									is_selected = instance.id == selected_instance_id,
+									onClick = { toggleSelection(instance) }
 								)
 							}
 
-							if(!group.is_collapsed) {
-								if(group_instances.isEmpty()) {
-									item(key = "empty-${group.id}", span = { GridItemSpan(maxLineSpan) }) {
-										BasicText(text = "No instances in this group yet.", style = QuantumTextStyles.label)
-									}
-								} else {
-									items(group_instances, key = { instance -> instance.id }) { instance ->
-										InstanceCard(
-											instance = instance,
-											is_selected = instance.id == selected_instance_id,
-											onClick = { toggleSelection(instance) }
-										)
+							groups.forEach { group ->
+								val group_instances = instances.filter { instance -> instance.group_id == group.id }
+
+								item(key = "group-${group.id}", span = { GridItemSpan(maxLineSpan) }) {
+									GroupHeading(
+										group = group,
+										instance_count = group_instances.size,
+										is_managed = group.id == managed_group_id,
+										onToggleCollapsed = {
+											val will_collapse = !group.is_collapsed
+											GroupStore.setCollapsed(group.id, will_collapse)
+											groups = GroupStore.loadForEdition(edition)
+
+											if(will_collapse && selected_instance?.group_id == group.id) {
+												clearSelection()
+											}
+										},
+										onManage = { toggleManagedGroup(group.id) }
+									)
+								}
+
+								if(!group.is_collapsed) {
+									if(group_instances.isEmpty()) {
+										item(key = "empty-${group.id}", span = { GridItemSpan(maxLineSpan) }) {
+											BasicText(text = "No instances in this group yet.", style = QuantumTextStyles.label)
+										}
+									} else {
+										items(group_instances, key = { instance -> instance.id }) { instance ->
+											InstanceCard(
+												instance = instance,
+												is_selected = instance.id == selected_instance_id,
+												onClick = { toggleSelection(instance) }
+											)
+										}
 									}
 								}
 							}
+						}
+
+						Box(modifier = Modifier.matchParentSize()) {
+							VerticalScrollbar(
+								adapter = rememberScrollbarAdapter(grid_state),
+								modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight()
+							)
 						}
 					}
 				}

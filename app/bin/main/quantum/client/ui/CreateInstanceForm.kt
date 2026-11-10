@@ -27,11 +27,13 @@ import quantum.shared.Loader
 import quantum.shared.NameRules
 import quantum.shared.VersionManifest
 import quantum.shared.VersionStore
+import quantum.shared.VersionType
 
 @Composable
 fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> Unit) {
 	val groups = remember(edition) { GroupStore.loadForEdition(edition) }
 	val group_options = listOf(DropdownOption<String?>(null, "No group")) + groups.map { group -> DropdownOption<String?>(group.id, group.name) }
+	val type_options = listOf(DropdownOption<VersionType?>(null, "All")) + VersionType.entries.map { version_type -> DropdownOption<VersionType?>(version_type, version_type.display_name) }
 
 	var instance_name by remember { mutableStateOf("") }
 	var game_version by remember { mutableStateOf(if(edition == Edition.JAVA) GameVersions.latest_release else "latest") }
@@ -42,10 +44,11 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	var manifest by remember { mutableStateOf<VersionManifest?>(null) }
 	var version_load_failed by remember { mutableStateOf(false) }
 	var retry_count by remember { mutableIntStateOf(0) }
+	var version_type_filter by remember { mutableStateOf<VersionType?>(null) }
 
 	val loaded_manifest = manifest
-	val version_options = remember(loaded_manifest) {
-		if(loaded_manifest != null) versionOptions(loaded_manifest) else emptyList()
+	val version_options = remember(loaded_manifest, version_type_filter) {
+		if(loaded_manifest != null) versionOptions(loaded_manifest, version_type_filter) else emptyList()
 	}
 
 	LaunchedEffect(edition, retry_count) {
@@ -76,15 +79,32 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 
 		if(edition == Edition.JAVA) {
 			if(loaded_manifest != null) {
-				QuantumDropdown(
-					label = "Game version",
-					options = version_options,
-					selected_value = game_version,
-					onValueSelected = { version_id ->
-						game_version = version_id
-						error_message = null
-					}
-				)
+				Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+					QuantumDropdown(
+						label = "Game version",
+						options = version_options,
+						selected_value = game_version,
+						onValueSelected = { version_id ->
+							game_version = version_id
+							error_message = null
+						}
+					)
+
+					QuantumDropdown(
+						label = "Type",
+						options = type_options,
+						selected_value = version_type_filter,
+						width = 160.dp,
+						onValueSelected = { version_type ->
+							version_type_filter = version_type
+							val filtered_options = versionOptions(loaded_manifest, version_type)
+
+							if(filtered_options.none { option -> option.value == game_version }) {
+								game_version = filtered_options.firstOrNull()?.value ?: GameVersions.latest_release
+							}
+						}
+					)
+				}
 			} else {
 				Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
 					BasicText(text = "Game version", style = QuantumTextStyles.label)
@@ -173,15 +193,25 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	}
 }
 
-private fun versionOptions(manifest: VersionManifest): List<DropdownOption<String>> {
-	val latest_options = listOf(
-		DropdownOption(GameVersions.latest_release, "Latest Release (${manifest.latest.release})"),
-		DropdownOption(GameVersions.latest_snapshot, "Latest Snapshot (${manifest.latest.snapshot})")
-	)
+private fun versionOptions(manifest: VersionManifest, type_filter: VersionType?): List<DropdownOption<String>> {
+	val show_latest_release = type_filter == null || type_filter == VersionType.RELEASE
+	val show_latest_snapshot = type_filter == null || type_filter == VersionType.SNAPSHOT
 
-	val replaced_ids = setOf(manifest.latest.release, manifest.latest.snapshot)
+	val latest_options = mutableListOf<DropdownOption<String>>()
+	val replaced_ids = mutableSetOf<String>()
+
+	if(show_latest_release) {
+		latest_options.add(DropdownOption(GameVersions.latest_release, "Latest Release (${manifest.latest.release})"))
+		replaced_ids.add(manifest.latest.release)
+	}
+
+	if(show_latest_snapshot) {
+		latest_options.add(DropdownOption(GameVersions.latest_snapshot, "Latest Snapshot (${manifest.latest.snapshot})"))
+		replaced_ids.add(manifest.latest.snapshot)
+	}
 
 	val other_options = manifest.versions
+		.filter { version -> type_filter == null || VersionType.fromApiName(version.type) == type_filter }
 		.filter { version -> version.id !in replaced_ids }
 		.sortedByDescending { version -> version.release_time }
 		.map { version -> DropdownOption(version.id, version.id) }
