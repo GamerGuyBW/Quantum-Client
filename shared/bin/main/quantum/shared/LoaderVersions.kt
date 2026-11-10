@@ -8,6 +8,11 @@ data class LoaderVersion(
 )
 
 @Serializable
+internal data class LoaderGameVersion(
+	val version: String
+)
+
+@Serializable
 internal data class FabricLoaderEntry(
 	val loader: FabricLoaderInfo
 )

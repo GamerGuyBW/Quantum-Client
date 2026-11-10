@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,16 +49,22 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	var retry_count by remember { mutableIntStateOf(0) }
 	var version_type_filter by remember { mutableStateOf<VersionType?>(null) }
 
+	var supported_game_versions by remember { mutableStateOf<Set<String>?>(null) }
+	var supported_versions_ready by remember { mutableStateOf(false) }
+	var supported_load_failed by remember { mutableStateOf(false) }
+	var supported_retry_count by remember { mutableIntStateOf(0) }
+
 	var loader_versions by remember { mutableStateOf<List<LoaderVersion>?>(null) }
 	var loader_load_failed by remember { mutableStateOf(false) }
 	var loader_retry_count by remember { mutableIntStateOf(0) }
 	var selected_loader_version by remember { mutableStateOf<String?>(null) }
 
 	val loaded_manifest = manifest
-	val version_options = remember(loaded_manifest, version_type_filter) {
-		if(loaded_manifest != null) versionOptions(loaded_manifest, version_type_filter) else emptyList()
+	val version_options = remember(loaded_manifest, version_type_filter, supported_game_versions) {
+		if(loaded_manifest != null) versionOptions(loaded_manifest, version_type_filter, supported_game_versions) else emptyList()
 	}
 	val resolved_game_version = if(loaded_manifest != null) GameVersions.resolve(game_version, loaded_manifest) else null
+	val is_version_list_ready = loaded_manifest != null && supported_versions_ready
 
 	val needs_loader_version = edition == Edition.JAVA && LoaderVersionStore.hasVersionList(selected_loader)
 	val loader_name = selected_loader.display_name
@@ -80,6 +87,29 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 			} catch(error: Exception) {
 				version_load_failed = true
 			}
+		}
+	}
+
+	LaunchedEffect(edition, selected_loader, supported_retry_count) {
+		supported_game_versions = null
+		supported_versions_ready = false
+		supported_load_failed = false
+
+		if(edition == Edition.JAVA) {
+			try {
+				supported_game_versions = withContext(Dispatchers.IO) { LoaderVersionStore.fetchSupportedGameVersions(selected_loader) }
+				supported_versions_ready = true
+			} catch(error: CancellationException) {
+				throw error
+			} catch(error: Exception) {
+				supported_load_failed = true
+			}
+		}
+	}
+
+	LaunchedEffect(version_options) {
+		if(version_options.isNotEmpty() && version_options.none { option -> option.value == game_version }) {
+			game_version = version_options.first().value
 		}
 	}
 
@@ -116,31 +146,50 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 		)
 
 		if(edition == Edition.JAVA) {
-			if(loaded_manifest != null) {
+			Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+				BasicText(text = "Mod loader", style = QuantumTextStyles.label)
+
+				Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+					Loader.entries.forEach { loader ->
+						ChoiceChip(
+							text = loader.display_name,
+							is_selected = loader == selected_loader,
+							onClick = {
+								selected_loader = loader
+								error_message = null
+							}
+						)
+					}
+				}
+			}
+
+			if(is_version_list_ready) {
 				Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-					QuantumDropdown(
-						label = "Game version",
-						options = version_options,
-						selected_value = game_version,
-						onValueSelected = { version_id ->
-							game_version = version_id
-							error_message = null
+					if(version_options.isEmpty()) {
+						val type_text = version_type_filter?.display_name?.let { type_name -> "$type_name " } ?: ""
+
+						Column(modifier = Modifier.width(320.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+							BasicText(text = "Game version", style = QuantumTextStyles.label)
+							BasicText(text = "No ${type_text}versions support $loader_name.", style = QuantumTextStyles.error)
 						}
-					)
+					} else {
+						QuantumDropdown(
+							label = "Game version",
+							options = version_options,
+							selected_value = game_version,
+							onValueSelected = { version_id ->
+								game_version = version_id
+								error_message = null
+							}
+						)
+					}
 
 					QuantumDropdown(
 						label = "Type",
 						options = type_options,
 						selected_value = version_type_filter,
 						width = 160.dp,
-						onValueSelected = { version_type ->
-							version_type_filter = version_type
-							val filtered_options = versionOptions(loaded_manifest, version_type)
-
-							if(filtered_options.none { option -> option.value == game_version }) {
-								game_version = filtered_options.firstOrNull()?.value ?: GameVersions.latest_release
-							}
-						}
+						onValueSelected = { version_type -> version_type_filter = version_type }
 					)
 				}
 			} else {
@@ -151,6 +200,11 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 						Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
 							BasicText(text = "Could not load the version list. Check your internet connection.", style = QuantumTextStyles.error)
 							QuantumButton(text = "Retry", style = ButtonStyle.SECONDARY, onClick = { retry_count += 1 })
+						}
+					} else if(supported_load_failed) {
+						Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+							BasicText(text = "Could not load the versions supported by $loader_name. Check your internet connection.", style = QuantumTextStyles.error)
+							QuantumButton(text = "Retry", style = ButtonStyle.SECONDARY, onClick = { supported_retry_count += 1 })
 						}
 					} else {
 						BasicText(text = "Loading the version list…", style = QuantumTextStyles.body)
@@ -168,26 +222,7 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 			)
 		}
 
-		if(edition == Edition.JAVA) {
-			Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-				BasicText(text = "Mod loader", style = QuantumTextStyles.label)
-
-				Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-					Loader.entries.forEach { loader ->
-						ChoiceChip(
-							text = loader.display_name,
-							is_selected = loader == selected_loader,
-							onClick = {
-								selected_loader = loader
-								error_message = null
-							}
-						)
-					}
-				}
-			}
-		}
-
-		if(needs_loader_version) {
+		if(needs_loader_version && version_options.isNotEmpty()) {
 			if(loaded_loader_versions != null && loaded_loader_versions.isNotEmpty()) {
 				QuantumDropdown(
 					label = "$loader_name version",
@@ -231,11 +266,14 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 					val final_name = instance_name.trimEnd()
 					val taken_names = InstanceStore.loadForEdition(edition).map { instance -> instance.name }
 					val name_problem = NameRules.findProblem(final_name, "instance", edition, taken_names)
+					val is_version_listed = version_options.any { option -> option.value == game_version }
 
 					if(name_problem != null) {
 						error_message = name_problem
-					} else if(edition == Edition.JAVA && manifest == null) {
+					} else if(edition == Edition.JAVA && !is_version_list_ready) {
 						error_message = "Wait for the version list to load before creating the instance."
+					} else if(edition == Edition.JAVA && !is_version_listed) {
+						error_message = "Choose a game version that supports $loader_name."
 					} else if(game_version.isBlank()) {
 						error_message = "Enter a game version, or `latest`."
 					} else if(needs_loader_version && loader_load_failed) {
@@ -269,9 +307,17 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	}
 }
 
-private fun versionOptions(manifest: VersionManifest, type_filter: VersionType?): List<DropdownOption<String>> {
-	val show_latest_release = type_filter == null || type_filter == VersionType.RELEASE
-	val show_latest_snapshot = type_filter == null || type_filter == VersionType.SNAPSHOT
+private fun versionOptions(
+	manifest: VersionManifest,
+	type_filter: VersionType?,
+	supported_ids: Set<String>?
+): List<DropdownOption<String>> {
+	fun isSupported(version_id: String): Boolean {
+		return supported_ids == null || version_id in supported_ids
+	}
+
+	val show_latest_release = (type_filter == null || type_filter == VersionType.RELEASE) && isSupported(manifest.latest.release)
+	val show_latest_snapshot = (type_filter == null || type_filter == VersionType.SNAPSHOT) && isSupported(manifest.latest.snapshot)
 
 	val latest_options = mutableListOf<DropdownOption<String>>()
 	val replaced_ids = mutableSetOf<String>()
@@ -288,6 +334,7 @@ private fun versionOptions(manifest: VersionManifest, type_filter: VersionType?)
 
 	val other_options = manifest.versions
 		.filter { version -> type_filter == null || VersionType.fromApiName(version.type) == type_filter }
+		.filter { version -> isSupported(version.id) }
 		.filter { version -> version.id !in replaced_ids }
 		.sortedByDescending { version -> version.release_time }
 		.map { version -> DropdownOption(version.id, version.id) }
