@@ -1,11 +1,9 @@
 package quantum.client.ui
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,6 +23,7 @@ import quantum.shared.NameRules
 @Composable
 fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> Unit) {
 	val groups = remember(edition) { GroupStore.loadForEdition(edition) }
+	val group_options = listOf(DropdownOption<String?>(null, "No group")) + groups.map { group -> DropdownOption<String?>(group.id, group.name) }
 
 	var instance_name by remember { mutableStateOf("") }
 	var game_version by remember { mutableStateOf("latest") }
@@ -70,28 +69,12 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 		}
 
 		if(groups.isNotEmpty()) {
-			Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-				BasicText(text = "Group", style = QuantumTextStyles.label)
-
-				Row(
-					modifier = Modifier.horizontalScroll(rememberScrollState()),
-					horizontalArrangement = Arrangement.spacedBy(8.dp)
-				) {
-					ChoiceChip(
-						text = "No group",
-						is_selected = selected_group_id == null,
-						onClick = { selected_group_id = null }
-					)
-
-					groups.forEach { group ->
-						ChoiceChip(
-							text = group.name,
-							is_selected = selected_group_id == group.id,
-							onClick = { selected_group_id = group.id }
-						)
-					}
-				}
-			}
+			QuantumDropdown(
+				label = "Group",
+				options = group_options,
+				selected_value = selected_group_id,
+				onValueSelected = { group_id -> selected_group_id = group_id }
+			)
 		}
 
 		Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {

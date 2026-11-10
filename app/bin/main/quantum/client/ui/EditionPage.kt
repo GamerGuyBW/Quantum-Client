@@ -1,6 +1,5 @@
 package quantum.client.ui
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +12,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -36,22 +34,20 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 	var groups by remember(edition) { mutableStateOf(GroupStore.loadForEdition(edition)) }
 	var selected_instance_id by remember(edition) { mutableStateOf<String?>(null) }
 	var is_confirming_delete by remember(edition) { mutableStateOf(false) }
-	var is_choosing_group by remember(edition) { mutableStateOf(false) }
 
 	val selected_instance = instances.firstOrNull { instance -> instance.id == selected_instance_id }
 	val group_ids = groups.map { group -> group.id }.toSet()
 	val loose_instances = instances.filter { instance -> instance.group_id == null || instance.group_id !in group_ids }
+	val group_options = listOf(DropdownOption<String?>(null, "No group")) + groups.map { group -> DropdownOption<String?>(group.id, group.name) }
 
 	fun clearSelection() {
 		selected_instance_id = null
 		is_confirming_delete = false
-		is_choosing_group = false
 	}
 
 	fun toggleSelection(instance: Instance) {
 		selected_instance_id = if(selected_instance_id == instance.id) null else instance.id
 		is_confirming_delete = false
-		is_choosing_group = false
 	}
 
 	fun moveSelectedInstance(group_id: String?) {
@@ -60,7 +56,6 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 			InstanceStore.moveToGroup(instance_to_move, group_id)
 			instances = InstanceStore.loadForEdition(edition)
 		}
-		is_choosing_group = false
 	}
 
 	Box(modifier = modifier.padding(20.dp)) {
@@ -182,32 +177,16 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 							)
 
 							QuantumButton(text = "Cancel", style = ButtonStyle.SECONDARY, onClick = { is_confirming_delete = false })
-						} else if(is_choosing_group) {
-							BasicText(text = "Move `${selected_instance.name}` to:", style = QuantumTextStyles.body)
-
-							Row(
-								modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-								horizontalArrangement = Arrangement.spacedBy(8.dp)
-							) {
-								ChoiceChip(
-									text = "No group",
-									is_selected = selected_instance.group_id == null || selected_instance.group_id !in group_ids,
-									onClick = { moveSelectedInstance(null) }
-								)
-
-								groups.forEach { group ->
-									ChoiceChip(
-										text = group.name,
-										is_selected = selected_instance.group_id == group.id,
-										onClick = { moveSelectedInstance(group.id) }
-									)
-								}
-							}
-
-							QuantumButton(text = "Cancel", style = ButtonStyle.SECONDARY, onClick = { is_choosing_group = false })
 						} else {
 							if(groups.isNotEmpty()) {
-								QuantumButton(text = "Move to group", style = ButtonStyle.SECONDARY, onClick = { is_choosing_group = true })
+								BasicText(text = "Group", style = QuantumTextStyles.label)
+
+								QuantumDropdown(
+									options = group_options,
+									selected_value = selected_instance.group_id?.takeIf { group_id -> group_id in group_ids },
+									onValueSelected = { group_id -> moveSelectedInstance(group_id) },
+									width = 200.dp
+								)
 							}
 
 							QuantumButton(text = "Delete", style = ButtonStyle.DANGER, onClick = { is_confirming_delete = true })
