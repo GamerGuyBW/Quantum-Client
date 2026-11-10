@@ -4,7 +4,6 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 
 object QuantumCache {
@@ -28,9 +27,7 @@ object QuantumCache {
 	}
 
 	fun writeText(file_name: String, text: String) {
-		val temporary_file = Files.createTempFile(QuantumPaths.cache_folder, "writing-", ".tmp")
-		Files.writeString(temporary_file, text)
-		Files.move(temporary_file, cacheFile(file_name), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+		AtomicFiles.writeText(cacheFile(file_name), text)
 	}
 
 	fun textOrFetch(file_name: String, url: String): String {

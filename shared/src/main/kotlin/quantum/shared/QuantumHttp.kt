@@ -12,6 +12,9 @@ class HttpStatusException(val status_code: Int, url: String) : IOException("`$ur
 class HttpBytes(val status_code: Int, val body: ByteArray, val total_size: Long?)
 
 object QuantumHttp {
+	private const val max_attempts = 5
+	private const val default_retry_after_seconds = 5L
+
 	private val http_client: HttpClient = HttpClient.newBuilder()
 		.connectTimeout(Duration.ofSeconds(10))
 		.followRedirects(HttpClient.Redirect.NORMAL)
@@ -19,12 +22,12 @@ object QuantumHttp {
 
 	fun fetchText(url: String): String {
 		val request = HttpRequest.newBuilder(URI.create(url))
-			.timeout(Duration.ofSeconds(20))
+			.timeout(Duration.ofSeconds(30))
 			.header("User-Agent", QuantumInfo.app_name)
 			.GET()
 			.build()
 
-		val response = http_client.send(request, HttpResponse.BodyHandlers.ofString())
+		val response = send(request, HttpResponse.BodyHandlers.ofString())
 
 		if(response.statusCode() != 200) {
 			throw HttpStatusException(response.statusCode(), url)
@@ -43,7 +46,7 @@ object QuantumHttp {
 			request_builder.header("Range", range)
 		}
 
-		val response = http_client.send(request_builder.build(), HttpResponse.BodyHandlers.ofByteArray())
+		val response = send(request_builder.build(), HttpResponse.BodyHandlers.ofByteArray())
 
 		if(response.statusCode() != 200 && response.statusCode() != 206) {
 			throw HttpStatusException(response.statusCode(), url)
@@ -53,5 +56,31 @@ object QuantumHttp {
 		val total_size = content_range?.substringAfter("/")?.toLongOrNull()
 
 		return HttpBytes(response.statusCode(), response.body(), total_size)
+	}
+
+	private fun <T> send(request: HttpRequest, body_handler: HttpResponse.BodyHandler<T>): HttpResponse<T> {
+		val host = request.uri().host
+
+		repeat(max_attempts) {
+			HostLimiter.acquire(host)
+
+			val start_nanos = System.nanoTime()
+			var retry_after_seconds: Long? = null
+
+			try {
+				val response = http_client.send(request, body_handler)
+
+				if(response.statusCode() == 429 || response.statusCode() == 503) {
+					val retry_after_header = response.headers().firstValue("Retry-After").orElse(null)
+					retry_after_seconds = retry_after_header?.toLongOrNull() ?: default_retry_after_seconds
+				} else {
+					return response
+				}
+			} finally {
+				HostLimiter.release(host, (System.nanoTime() - start_nanos) / 1_000_000_000.0, retry_after_seconds)
+			}
+		}
+
+		throw HttpStatusException(429, request.uri().toString())
 	}
 }

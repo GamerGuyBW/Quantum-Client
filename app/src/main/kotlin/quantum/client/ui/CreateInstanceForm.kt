@@ -12,13 +12,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import quantum.shared.Edition
 import quantum.shared.GameVersions
@@ -26,12 +27,9 @@ import quantum.shared.GroupStore
 import quantum.shared.Instance
 import quantum.shared.InstanceStore
 import quantum.shared.Loader
-import quantum.shared.LoaderPreloader
 import quantum.shared.LoaderVersion
 import quantum.shared.LoaderVersionStore
 import quantum.shared.NameRules
-import quantum.shared.PreloadState
-import quantum.shared.PreloadStatus
 import quantum.shared.VersionManifest
 import quantum.shared.VersionStore
 import quantum.shared.VersionType
@@ -41,12 +39,14 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	val groups = remember(edition) { GroupStore.loadForEdition(edition) }
 	val group_options = listOf(DropdownOption<String?>(null, "No group")) + groups.map { group -> DropdownOption<String?>(group.id, group.name) }
 	val type_options = listOf(DropdownOption<VersionType?>(null, "All")) + VersionType.entries.map { version_type -> DropdownOption<VersionType?>(version_type, version_type.display_name) }
+	val coroutine_scope = rememberCoroutineScope()
 
 	var instance_name by remember { mutableStateOf("") }
 	var game_version by remember { mutableStateOf(if(edition == Edition.JAVA) GameVersions.latest_release else "latest") }
 	var selected_loader by remember { mutableStateOf(Loader.VANILLA) }
 	var selected_group_id by remember { mutableStateOf<String?>(null) }
 	var error_message by remember { mutableStateOf<String?>(null) }
+	var is_verifying by remember { mutableStateOf(false) }
 
 	var manifest by remember { mutableStateOf<VersionManifest?>(null) }
 	var version_load_failed by remember { mutableStateOf(false) }
@@ -55,7 +55,8 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 
 	var supported_game_versions by remember { mutableStateOf<Set<String>?>(null) }
 	var supported_ready_for by remember { mutableStateOf<Loader?>(null) }
-	var supported_status by remember { mutableStateOf<PreloadStatus?>(null) }
+	var supported_missing by remember { mutableStateOf(false) }
+	var supported_reload_count by remember { mutableIntStateOf(0) }
 
 	var loader_versions by remember { mutableStateOf<List<LoaderVersion>?>(null) }
 	var loader_load_failed by remember { mutableStateOf(false) }
@@ -93,27 +94,22 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 		}
 	}
 
-	LaunchedEffect(edition, selected_loader) {
+	LaunchedEffect(edition, selected_loader, supported_reload_count) {
 		supported_game_versions = null
 		supported_ready_for = null
-		supported_status = null
+		supported_missing = false
 
 		if(edition == Edition.JAVA) {
 			if(!LoaderVersionStore.hasVersionList(selected_loader)) {
 				supported_ready_for = selected_loader
 			} else {
-				LoaderPreloader.prioritise(selected_loader)
+				val loaded_versions = withContext(Dispatchers.IO) { LoaderVersionStore.loadSupportedGameVersions(selected_loader) }
 
-				while(supported_ready_for != selected_loader) {
-					val current_status = LoaderPreloader.status(selected_loader)
-					supported_status = current_status
-
-					if(current_status.state == PreloadState.READY) {
-						supported_game_versions = withContext(Dispatchers.IO) { LoaderVersionStore.loadSupportedGameVersions(selected_loader) }
-						supported_ready_for = selected_loader
-					} else {
-						delay(250)
-					}
+				if(loaded_versions != null) {
+					supported_game_versions = loaded_versions
+					supported_ready_for = selected_loader
+				} else {
+					supported_missing = true
 				}
 			}
 		}
@@ -208,26 +204,13 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 				Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
 					BasicText(text = "Game version", style = QuantumTextStyles.label)
 
-					val current_status = supported_status
-
 					if(version_load_failed) {
 						Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
 							BasicText(text = "Could not load the version list. Check your internet connection.", style = QuantumTextStyles.error)
 							QuantumButton(text = "Retry", style = ButtonStyle.SECONDARY, onClick = { retry_count += 1 })
 						}
-					} else if(current_status?.state == PreloadState.FAILED) {
-						Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-							BasicText(text = "Could not load the versions supported by $loader_name. Check your internet connection.", style = QuantumTextStyles.error)
-							QuantumButton(text = "Retry", style = ButtonStyle.SECONDARY, onClick = { LoaderPreloader.retry(selected_loader) })
-						}
-					} else if(current_status != null && current_status.total_count > 0) {
-						BasicText(
-							text = "Checking $loader_name versions… ${"%,d".format(current_status.checked_count)} of ${"%,d".format(current_status.total_count)}",
-							style = QuantumTextStyles.body
-						)
-						BasicText(text = "Checks continue in the background if you close this form.", style = QuantumTextStyles.label)
-					} else if(current_status?.state == PreloadState.WAITING) {
-						BasicText(text = "Waiting to check $loader_name versions…", style = QuantumTextStyles.body)
+					} else if(supported_missing) {
+						BasicText(text = "The $loader_name version list is missing. Restart Quantum Client to rebuild it.", style = QuantumTextStyles.error)
 					} else {
 						BasicText(text = "Loading the version list…", style = QuantumTextStyles.body)
 					}
@@ -281,40 +264,73 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 
 		Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
 			QuantumButton(
-				text = "Create",
+				text = if(is_verifying) "Checking…" else "Create",
 				onClick = {
-					val final_name = instance_name.trimEnd()
-					val taken_names = InstanceStore.loadForEdition(edition).map { instance -> instance.name }
-					val name_problem = NameRules.findProblem(final_name, "instance", edition, taken_names)
-					val is_version_listed = version_options.any { option -> option.value == game_version }
-					val chosen_loader_version = loaded_loader_versions?.firstOrNull { loader_version -> loader_version.version == selected_loader_version }
+					if(!is_verifying) {
+						val final_name = instance_name.trimEnd()
+						val taken_names = InstanceStore.loadForEdition(edition).map { instance -> instance.name }
+						val name_problem = NameRules.findProblem(final_name, "instance", edition, taken_names)
+						val is_version_listed = version_options.any { option -> option.value == game_version }
+						val chosen_loader_version = loaded_loader_versions?.firstOrNull { loader_version -> loader_version.version == selected_loader_version }
+						val checked_game_version = resolved_game_version
 
-					if(name_problem != null) {
-						error_message = name_problem
-					} else if(edition == Edition.JAVA && !is_version_list_ready) {
-						error_message = "Wait for the version list to load before creating the instance."
-					} else if(edition == Edition.JAVA && !is_version_listed) {
-						error_message = "Choose a game version that supports $loader_name."
-					} else if(game_version.isBlank()) {
-						error_message = "Enter a game version, or `latest`."
-					} else if(needs_loader_version && loader_load_failed) {
-						error_message = "Could not load the $loader_name versions. Select `Retry` and try again."
-					} else if(needs_loader_version && loader_versions == null) {
-						error_message = "Wait for the $loader_name versions to load before creating the instance."
-					} else if(needs_loader_version && chosen_loader_version == null) {
-						error_message = "$loader_name is not available for `$resolved_game_version`. Choose a different game version or mod loader."
-					} else {
-						val new_instance = Instance(
-							name = final_name,
-							edition = edition,
-							game_version = game_version.trim(),
-							loader = selected_loader,
-							loader_version = if(needs_loader_version) chosen_loader_version?.version else null,
-							loader_version_name = if(needs_loader_version) chosen_loader_version?.display_name else null,
-							group_id = selected_group_id
-						)
-						InstanceStore.save(new_instance)
-						onCreated()
+						if(name_problem != null) {
+							error_message = name_problem
+						} else if(edition == Edition.JAVA && !is_version_list_ready) {
+							error_message = "Wait for the version list to load before creating the instance."
+						} else if(edition == Edition.JAVA && !is_version_listed) {
+							error_message = "Choose a game version that supports $loader_name."
+						} else if(game_version.isBlank()) {
+							error_message = "Enter a game version, or `latest`."
+						} else if(needs_loader_version && loader_load_failed) {
+							error_message = "Could not load the $loader_name versions. Select `Retry` and try again."
+						} else if(needs_loader_version && loader_versions == null) {
+							error_message = "Wait for the $loader_name versions to load before creating the instance."
+						} else if(needs_loader_version && chosen_loader_version == null) {
+							error_message = "$loader_name is not available for `$resolved_game_version`. Choose a different game version or mod loader."
+						} else {
+							val new_instance = Instance(
+								name = final_name,
+								edition = edition,
+								game_version = game_version.trim(),
+								loader = selected_loader,
+								loader_version = if(needs_loader_version) chosen_loader_version?.version else null,
+								loader_version_name = if(needs_loader_version) chosen_loader_version?.display_name else null,
+								group_id = selected_group_id
+							)
+
+							val loader_being_checked = selected_loader
+
+							if(chosen_loader_version?.installer_url != null && checked_game_version != null) {
+								is_verifying = true
+
+								coroutine_scope.launch {
+									val verification_problem = try {
+										withContext(Dispatchers.IO) {
+											LoaderVersionStore.verifyGameVersion(loader_being_checked, chosen_loader_version, checked_game_version)
+										}
+									} catch(error: CancellationException) {
+										throw error
+									} catch(error: Exception) {
+										"Could not confirm the $loader_name version. Check your internet connection."
+									}
+
+									is_verifying = false
+
+									if(verification_problem != null) {
+										error_message = verification_problem
+										supported_reload_count += 1
+										loader_retry_count += 1
+									} else {
+										InstanceStore.save(new_instance)
+										onCreated()
+									}
+								}
+							} else {
+								InstanceStore.save(new_instance)
+								onCreated()
+							}
+						}
 					}
 				}
 			)

@@ -5,7 +5,8 @@ import kotlinx.serialization.Serializable
 data class LoaderVersion(
 	val version: String,
 	val display_name: String,
-	val is_stable: Boolean
+	val is_stable: Boolean,
+	val installer_url: String? = null
 )
 
 @Serializable

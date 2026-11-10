@@ -50,6 +50,24 @@ object LoaderVersionStore {
 		}
 	}
 
+	fun verifyGameVersion(loader: Loader, loader_version: LoaderVersion, expected_game_version: String): String? {
+		val installer_url = loader_version.installer_url ?: return null
+		val actual_game_version = InstallerInfo.minecraftVersion(installer_url)
+
+		if(actual_game_version == expected_game_version) {
+			return null
+		}
+
+		VersionDatabase.correct(loader, loader_version.version, actual_game_version)
+		writeSupportedFromDatabase(loader)
+
+		return if(actual_game_version == null) {
+			"${loader.display_name} `${loader_version.display_name}` no longer has an installer. The version lists have been corrected, so choose again."
+		} else {
+			"${loader.display_name} `${loader_version.display_name}` is for Minecraft `$actual_game_version`, not `$expected_game_version`. The version lists have been corrected, so choose again."
+		}
+	}
+
 	internal fun mavenArtifacts(loader: Loader): List<MavenArtifact> {
 		val cached_text = QuantumCache.readText(artifactsFileName(loader))
 		if(cached_text != null) {
@@ -65,20 +83,13 @@ object LoaderVersionStore {
 		return artifacts
 	}
 
-	internal fun checkedInstallerResults(loader: Loader): Map<String, String?> {
-		return QuantumCache.readLines(resultsFileName(loader))
-			.map { line -> QuantumJson.compact_json.decodeFromString(InstallerResult.serializer(), line) }
-			.associate { result -> result.version to result.minecraft_version }
-	}
-
 	internal fun checkInstaller(loader: Loader, artifact: MavenArtifact) {
 		val minecraft_version = InstallerInfo.minecraftVersion(artifact.installer_url)
-		val result_line = QuantumJson.compact_json.encodeToString(InstallerResult.serializer(), InstallerResult(artifact.version, minecraft_version))
-		QuantumCache.appendLine(resultsFileName(loader), result_line)
+		VersionDatabase.record(loader, artifact.version, minecraft_version)
 	}
 
-	internal fun finishInstallerChecks(loader: Loader) {
-		val supported_versions = checkedInstallerResults(loader).values.filterNotNull().toSet()
+	internal fun writeSupportedFromDatabase(loader: Loader) {
+		val supported_versions = VersionDatabase.load(loader).values.filterNotNull().toSet()
 		saveSupportedGameVersions(loader, supported_versions)
 	}
 
@@ -106,14 +117,14 @@ object LoaderVersionStore {
 	}
 
 	private fun fetchMappedVersions(loader: Loader, game_version_id: String): List<LoaderVersion> {
-		val installer_results = checkedInstallerResults(loader)
+		val database_results = VersionDatabase.load(loader)
 
 		return mavenArtifacts(loader)
 			.asReversed()
-			.filter { artifact -> installer_results[artifact.version] == game_version_id }
+			.filter { artifact -> database_results[artifact.version] == game_version_id }
 			.map { artifact ->
 				val display_name = artifact.version.removePrefix("$game_version_id-")
-				LoaderVersion(artifact.version, display_name, !SemanticVersions.isPreRelease(display_name))
+				LoaderVersion(artifact.version, display_name, !SemanticVersions.isPreRelease(display_name), artifact.installer_url)
 			}
 	}
 
@@ -141,10 +152,6 @@ object LoaderVersionStore {
 
 	private fun artifactsFileName(loader: Loader): String {
 		return "maven_artifacts_${loader.name.lowercase()}.json"
-	}
-
-	private fun resultsFileName(loader: Loader): String {
-		return "installer_results_${loader.name.lowercase()}.jsonl"
 	}
 
 	private fun encodeForPath(game_version_id: String): String {
