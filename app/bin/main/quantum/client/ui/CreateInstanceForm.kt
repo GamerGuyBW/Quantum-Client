@@ -26,7 +26,6 @@ import quantum.shared.Instance
 import quantum.shared.InstanceStore
 import quantum.shared.Loader
 import quantum.shared.LoaderVersion
-import quantum.shared.LoaderVersionNames
 import quantum.shared.LoaderVersionStore
 import quantum.shared.NameRules
 import quantum.shared.VersionManifest
@@ -54,6 +53,7 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	var supported_versions_ready by remember { mutableStateOf(false) }
 	var supported_load_failed by remember { mutableStateOf(false) }
 	var supported_retry_count by remember { mutableIntStateOf(0) }
+	var supported_progress by remember { mutableStateOf<String?>(null) }
 
 	var loader_versions by remember { mutableStateOf<List<LoaderVersion>?>(null) }
 	var loader_load_failed by remember { mutableStateOf(false) }
@@ -72,8 +72,7 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	val loaded_loader_versions = loader_versions
 	val loader_version_options = remember(loaded_loader_versions) {
 		loaded_loader_versions.orEmpty().map { loader_version ->
-			val shown_version = LoaderVersionNames.displayName(loader_version.version)
-			val label = if(loader_version.is_stable) shown_version else "$shown_version (unstable)"
+			val label = if(loader_version.is_stable) loader_version.display_name else "${loader_version.display_name} (unstable)"
 			DropdownOption<String?>(loader_version.version, label)
 		}
 	}
@@ -96,10 +95,17 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 		supported_game_versions = null
 		supported_versions_ready = false
 		supported_load_failed = false
+		supported_progress = null
 
 		if(edition == Edition.JAVA) {
+			val checking_loader_name = selected_loader.display_name
+
 			try {
-				supported_game_versions = withContext(Dispatchers.IO) { LoaderVersionStore.fetchSupportedGameVersions(selected_loader) }
+				supported_game_versions = withContext(Dispatchers.IO) {
+					LoaderVersionStore.fetchSupportedGameVersions(selected_loader) { checked_count, total_count ->
+						supported_progress = "Checking $checking_loader_name versions… ${"%,d".format(checked_count)} of ${"%,d".format(total_count)}"
+					}
+				}
 				supported_versions_ready = true
 			} catch(error: CancellationException) {
 				throw error
@@ -198,6 +204,8 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 				Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
 					BasicText(text = "Game version", style = QuantumTextStyles.label)
 
+					val current_progress = supported_progress
+
 					if(version_load_failed) {
 						Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
 							BasicText(text = "Could not load the version list. Check your internet connection.", style = QuantumTextStyles.error)
@@ -208,6 +216,9 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 							BasicText(text = "Could not load the versions supported by $loader_name. Check your internet connection.", style = QuantumTextStyles.error)
 							QuantumButton(text = "Retry", style = ButtonStyle.SECONDARY, onClick = { supported_retry_count += 1 })
 						}
+					} else if(current_progress != null) {
+						BasicText(text = current_progress, style = QuantumTextStyles.body)
+						BasicText(text = "Each version is only checked once. Later visits are instant.", style = QuantumTextStyles.label)
 					} else {
 						BasicText(text = "Loading the version list…", style = QuantumTextStyles.body)
 					}
@@ -269,6 +280,7 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 					val taken_names = InstanceStore.loadForEdition(edition).map { instance -> instance.name }
 					val name_problem = NameRules.findProblem(final_name, "instance", edition, taken_names)
 					val is_version_listed = version_options.any { option -> option.value == game_version }
+					val chosen_loader_version = loaded_loader_versions?.firstOrNull { loader_version -> loader_version.version == selected_loader_version }
 
 					if(name_problem != null) {
 						error_message = name_problem
@@ -282,7 +294,7 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 						error_message = "Could not load the $loader_name versions. Select `Retry` and try again."
 					} else if(needs_loader_version && loader_versions == null) {
 						error_message = "Wait for the $loader_name versions to load before creating the instance."
-					} else if(needs_loader_version && selected_loader_version == null) {
+					} else if(needs_loader_version && chosen_loader_version == null) {
 						error_message = "$loader_name is not available for `$resolved_game_version`. Choose a different game version or mod loader."
 					} else {
 						val new_instance = Instance(
@@ -290,7 +302,8 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 							edition = edition,
 							game_version = game_version.trim(),
 							loader = selected_loader,
-							loader_version = if(needs_loader_version) selected_loader_version else null,
+							loader_version = if(needs_loader_version) chosen_loader_version?.version else null,
+							loader_version_name = if(needs_loader_version) chosen_loader_version?.display_name else null,
 							group_id = selected_group_id
 						)
 						InstanceStore.save(new_instance)

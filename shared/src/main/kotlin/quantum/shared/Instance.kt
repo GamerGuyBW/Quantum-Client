@@ -11,5 +11,6 @@ data class Instance(
 	val game_version: String,
 	val loader: Loader = Loader.VANILLA,
 	val loader_version: String? = null,
+	val loader_version_name: String? = null,
 	val group_id: String? = null
 )

@@ -4,7 +4,13 @@ import kotlinx.serialization.Serializable
 
 data class LoaderVersion(
 	val version: String,
+	val display_name: String,
 	val is_stable: Boolean
+)
+
+internal data class MavenArtifact(
+	val version: String,
+	val installer_url: String
 )
 
 @Serializable

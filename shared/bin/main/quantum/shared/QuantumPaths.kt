@@ -7,10 +7,12 @@ object QuantumPaths {
 	val data_folder: Path = findDataFolder()
 	val shared_folder: Path = data_folder.resolve("shared")
 	val instances_folder: Path = data_folder.resolve("instances")
+	val cache_folder: Path = data_folder.resolve("cache")
 
 	fun createFolders() {
 		Files.createDirectories(shared_folder)
 		Files.createDirectories(instances_folder)
+		Files.createDirectories(cache_folder)
 	}
 
 	private fun findDataFolder(): Path {

@@ -20,15 +20,14 @@ import androidx.compose.ui.unit.dp
 import quantum.shared.Edition
 import quantum.shared.GameVersions
 import quantum.shared.Instance
-import quantum.shared.LoaderVersionNames
 
 @Composable
 fun InstanceCard(instance: Instance, is_selected: Boolean, onClick: () -> Unit) {
 	val shape = RoundedCornerShape(10.dp)
 	val border_colour = if(is_selected) QuantumColours.blue else QuantumColours.border
 	val version_name = GameVersions.displayName(instance.game_version)
-	val loader_version = instance.loader_version
-	val loader_name = if(loader_version != null) "${instance.loader.display_name} ${LoaderVersionNames.displayName(loader_version)}" else instance.loader.display_name
+	val shown_loader_version = instance.loader_version_name ?: instance.loader_version
+	val loader_name = if(shown_loader_version != null) "${instance.loader.display_name} $shown_loader_version" else instance.loader.display_name
 	val details = if(instance.edition == Edition.JAVA) "$version_name · $loader_name" else version_name
 
 	Column(
