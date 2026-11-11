@@ -9,7 +9,6 @@ import javax.xml.parsers.DocumentBuilderFactory
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -25,7 +24,6 @@ object LoaderVersionStore {
 	private const val forge_maven_url = "https://maven.minecraftforge.net/releases/net/minecraftforge/forge/"
 	private const val forge_mapping_url = "https://files.minecraftforge.net/net/minecraftforge/forge/maven-metadata.json"
 	private const val forge_promotions_url = "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json"
-	private const val liteloader_versions_url = "https://dl.liteloader.com/versions/versions.json"
 	private const val installer_read_threads = 16
 
 	fun hasVersionList(loader: Loader): Boolean {
@@ -40,7 +38,6 @@ object LoaderVersionStore {
 			Loader.QUILT -> saveSupportedGameVersions(loader, fetchGameVersionList(quilt_meta_url))
 			Loader.FORGE -> saveResolvedVersions(loader, resolveForgeVersions())
 			Loader.NEOFORGE -> saveResolvedVersions(loader, resolveNeoForgeVersions())
-			Loader.LITELOADER -> saveSupportedGameVersions(loader, liteLoaderGameVersions().keys)
 			Loader.VANILLA -> throw IllegalArgumentException("`${loader.display_name}` does not have a version list.")
 		}
 	}
@@ -57,7 +54,6 @@ object LoaderVersionStore {
 			Loader.BABRIC -> fetchFabricStyleVersions(loader, babric_meta_url, game_version_id)
 			Loader.QUILT -> fetchQuiltVersions(game_version_id)
 			Loader.FORGE, Loader.NEOFORGE -> fetchResolvedVersions(loader, game_version_id)
-			Loader.LITELOADER -> fetchLiteLoaderVersions(game_version_id)
 			Loader.VANILLA -> emptyList()
 		}
 	}
@@ -169,41 +165,6 @@ object LoaderVersionStore {
 					is_stable = loader == Loader.FORGE || !SemanticVersions.isPreRelease(display_name),
 					installer_url = resolved_version.installer_url,
 					is_recommended = display_name == recommended_version
-				)
-			}
-	}
-
-	private fun liteLoaderGameVersions(): JsonObject {
-		val versions_text = QuantumCache.textOrFetch("liteloader_versions.json", liteloader_versions_url)
-		return QuantumJson.json.parseToJsonElement(versions_text).jsonObject["versions"]?.jsonObject ?: JsonObject(emptyMap())
-	}
-
-	private fun fetchLiteLoaderVersions(game_version_id: String): List<LoaderVersion> {
-		val game_details = liteLoaderGameVersions()[game_version_id]?.jsonObject ?: return emptyList()
-
-		val builds = listOf("artefacts", "snapshots").flatMap { section_name ->
-			val section_builds = game_details[section_name]?.jsonObject?.get("com.mumfrey:liteloader")?.jsonObject
-
-			if(section_builds == null) {
-				emptyList()
-			} else {
-				section_builds
-					.filterKeys { build_key -> build_key != "latest" }
-					.values
-					.map { build_element -> QuantumJson.json.decodeFromJsonElement(LiteLoaderBuild.serializer(), build_element) }
-			}
-		}
-
-		return builds
-			.distinctBy { build -> build.md5 }
-			.sortedByDescending { build -> build.timestamp.toLongOrNull() ?: 0L }
-			.map { build ->
-				val loader_version = build.build ?: build.version
-
-				LoaderVersion(
-					version = loader_version,
-					display_name = loader_version.removePrefix("$game_version_id-"),
-					is_stable = build.stream == "RELEASE"
 				)
 			}
 	}

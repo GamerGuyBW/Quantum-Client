@@ -29,6 +29,7 @@ fun InstanceCard(instance: Instance, is_selected: Boolean, onClick: () -> Unit) 
 	val shown_loader_version = instance.loader_version_name ?: instance.loader_version
 	val loader_name = if(shown_loader_version != null) "${instance.loader.display_name} $shown_loader_version" else instance.loader.display_name
 	val details = if(instance.edition == Edition.JAVA) "$version_name · $loader_name" else version_name
+	val addon_details = instance.addons.joinToString(", ") { instance_addon -> "${instance_addon.addon.display_name} ${instance_addon.version_name}" }
 
 	Column(
 		modifier = Modifier
@@ -53,5 +54,14 @@ fun InstanceCard(instance: Instance, is_selected: Boolean, onClick: () -> Unit) 
 			maxLines = 1,
 			overflow = TextOverflow.Ellipsis
 		)
+
+		if(addon_details.isNotEmpty()) {
+			BasicText(
+				text = "+ $addon_details",
+				style = QuantumTextStyles.label,
+				maxLines = 1,
+				overflow = TextOverflow.Ellipsis
+			)
+		}
 	}
 }

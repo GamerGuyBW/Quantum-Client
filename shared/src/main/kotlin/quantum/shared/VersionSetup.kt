@@ -19,6 +19,8 @@ object VersionSetup {
 		Loader.entries
 			.filter { loader -> LoaderVersionStore.hasVersionList(loader) }
 			.forEach { loader -> put(loader.display_name) { LoaderVersionStore.prepareLoader(loader) } }
+
+		Addon.entries.forEach { addon -> put(addonTaskName(addon)) { AddonVersionStore.prepareAddon(addon) } }
 	}
 
 	private val states = ConcurrentHashMap<String, SetupTaskState>()
@@ -47,14 +49,34 @@ object VersionSetup {
 	}
 
 	fun loaderState(loader: Loader): SetupTaskState {
-		return states[loader.display_name] ?: SetupTaskState.WAITING
+		return taskState(loader.display_name)
+	}
+
+	fun addonState(addon: Addon): SetupTaskState {
+		return taskState(addonTaskName(addon))
 	}
 
 	fun retry(loader: Loader) {
-		val loader_state = loaderState(loader)
+		retryTask(loader.display_name)
+	}
 
-		if(loader_state == SetupTaskState.FAILED || loader_state == SetupTaskState.DONE) {
-			submitTask(loader.display_name)
+	fun retryAddon(addon: Addon) {
+		retryTask(addonTaskName(addon))
+	}
+
+	private fun addonTaskName(addon: Addon): String {
+		return "${addon.display_name} add-on"
+	}
+
+	private fun taskState(task_name: String): SetupTaskState {
+		return states[task_name] ?: SetupTaskState.WAITING
+	}
+
+	private fun retryTask(task_name: String) {
+		val task_state = taskState(task_name)
+
+		if(task_state == SetupTaskState.FAILED || task_state == SetupTaskState.DONE) {
+			submitTask(task_name)
 		}
 	}
 

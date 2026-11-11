@@ -9,6 +9,7 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -22,10 +23,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import quantum.shared.Addon
 import quantum.shared.Edition
 import quantum.shared.GameVersions
 import quantum.shared.GroupStore
 import quantum.shared.Instance
+import quantum.shared.InstanceAddon
 import quantum.shared.InstanceStore
 import quantum.shared.Loader
 import quantum.shared.LoaderVersion
@@ -67,6 +70,10 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	var loader_retry_count by remember { mutableIntStateOf(0) }
 	var selected_loader_version by remember { mutableStateOf<String?>(null) }
 
+	var checked_addons by remember { mutableStateOf<Set<Addon>>(emptySet()) }
+	var chosen_addon_versions by remember { mutableStateOf<Map<Addon, LoaderVersion>>(emptyMap()) }
+	var failed_addons by remember { mutableStateOf<Set<Addon>>(emptySet()) }
+
 	val loaded_manifest = manifest
 	val is_version_list_ready = loaded_manifest != null && supported_ready_for == selected_loader
 	val version_options = remember(loaded_manifest, version_type_filter, supported_game_versions, is_version_list_ready) {
@@ -77,18 +84,7 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	val needs_loader_version = edition == Edition.JAVA && LoaderVersionStore.hasVersionList(selected_loader)
 	val loader_name = selected_loader.display_name
 	val loaded_loader_versions = loader_versions
-	val loader_version_options = remember(loaded_loader_versions) {
-		loaded_loader_versions.orEmpty().map { loader_version ->
-			val label = if(loader_version.is_recommended) {
-				"${loader_version.display_name} (recommended)"
-			} else if(!loader_version.is_stable) {
-				"${loader_version.display_name} (unstable)"
-			} else {
-				loader_version.display_name
-			}
-			DropdownOption<String?>(loader_version.version, label)
-		}
-	}
+	val loader_version_options = remember(loaded_loader_versions) { loaderVersionOptions(loaded_loader_versions.orEmpty()) }
 
 	LaunchedEffect(edition, retry_count) {
 		if(edition == Edition.JAVA) {
@@ -148,11 +144,7 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 			try {
 				val fetched_versions = withContext(Dispatchers.IO) { LoaderVersionStore.fetchVersions(selected_loader, resolved_game_version) }
 				loader_versions = fetched_versions
-
-				val default_version = fetched_versions.firstOrNull { loader_version -> loader_version.is_recommended }
-					?: fetched_versions.firstOrNull { loader_version -> loader_version.is_stable }
-					?: fetched_versions.firstOrNull()
-				selected_loader_version = default_version?.version
+				selected_loader_version = defaultLoaderVersion(fetched_versions)?.version
 			} catch(error: CancellationException) {
 				throw error
 			} catch(error: Exception) {
@@ -271,6 +263,31 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 			}
 		}
 
+		if(edition == Edition.JAVA && version_options.isNotEmpty() && resolved_game_version != null) {
+			Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+				BasicText(text = "Add-ons", style = QuantumTextStyles.label)
+
+				Addon.entries.forEach { addon ->
+					key(addon) {
+						AddonRow(
+							addon = addon,
+							selected_loader = selected_loader,
+							game_version_id = resolved_game_version,
+							is_checked = addon in checked_addons,
+							onCheckedChange = { is_checked ->
+								checked_addons = if(is_checked) checked_addons + addon else checked_addons - addon
+								error_message = null
+							},
+							onVersionChange = { addon_version, is_failed ->
+								chosen_addon_versions = if(addon_version != null) chosen_addon_versions + (addon to addon_version) else chosen_addon_versions - addon
+								failed_addons = if(is_failed) failed_addons + addon else failed_addons - addon
+							}
+						)
+					}
+				}
+			}
+		}
+
 		if(groups.isNotEmpty()) {
 			QuantumDropdown(
 				label = "Group",
@@ -291,6 +308,8 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 						val is_version_listed = version_options.any { option -> option.value == game_version }
 						val chosen_loader_version = loaded_loader_versions?.firstOrNull { loader_version -> loader_version.version == selected_loader_version }
 						val checked_game_version = resolved_game_version
+						val ordered_addons = Addon.entries.filter { addon -> addon in checked_addons }
+						val missing_addon = ordered_addons.firstOrNull { addon -> addon !in chosen_addon_versions }
 
 						if(name_problem != null) {
 							error_message = name_problem
@@ -306,6 +325,10 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 							error_message = "Wait for the $loader_name versions to load before creating the instance."
 						} else if(needs_loader_version && chosen_loader_version == null) {
 							error_message = "$loader_name is not available for `$resolved_game_version`. Choose a different game version or mod loader."
+						} else if(missing_addon != null && missing_addon in failed_addons) {
+							error_message = "Could not load the ${missing_addon.display_name} versions. Select `Retry` and try again."
+						} else if(missing_addon != null) {
+							error_message = "Wait for the ${missing_addon.display_name} versions to load before creating the instance."
 						} else {
 							val new_instance = Instance(
 								name = final_name,
@@ -314,7 +337,15 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 								loader = selected_loader,
 								loader_version = if(needs_loader_version) chosen_loader_version?.version else null,
 								loader_version_name = if(needs_loader_version) chosen_loader_version?.display_name else null,
-								group_id = selected_group_id
+								group_id = selected_group_id,
+								addons = if(edition == Edition.JAVA) {
+									ordered_addons.map { addon ->
+										val addon_version = chosen_addon_versions.getValue(addon)
+										InstanceAddon(addon, addon_version.version, addon_version.display_name)
+									}
+								} else {
+									emptyList()
+								}
 							)
 
 							val loader_being_checked = selected_loader
