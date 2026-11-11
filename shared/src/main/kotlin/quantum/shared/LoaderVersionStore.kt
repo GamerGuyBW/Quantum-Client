@@ -17,6 +17,7 @@ import org.xml.sax.InputSource
 object LoaderVersionStore {
 	private const val fabric_meta_url = "https://meta.fabricmc.net/v2/versions/"
 	private const val legacy_fabric_meta_url = "https://meta.legacyfabric.net/v2/versions/"
+	private const val babric_meta_url = "https://meta.babric.glass-launcher.net/v2/versions/"
 	private const val quilt_meta_url = "https://meta.quiltmc.org/v3/versions/"
 	private const val neoforge_maven_url = "https://maven.neoforged.net/releases/net/neoforged/neoforge/"
 	private const val legacy_neoforge_maven_url = "https://maven.neoforged.net/releases/net/neoforged/forge/"
@@ -33,6 +34,7 @@ object LoaderVersionStore {
 		when(loader) {
 			Loader.FABRIC -> saveSupportedGameVersions(loader, fetchGameVersionList(fabric_meta_url))
 			Loader.LEGACY_FABRIC -> saveSupportedGameVersions(loader, fetchGameVersionList(legacy_fabric_meta_url))
+			Loader.BABRIC -> saveSupportedGameVersions(loader, fetchGameVersionList(babric_meta_url))
 			Loader.QUILT -> saveSupportedGameVersions(loader, fetchGameVersionList(quilt_meta_url))
 			Loader.FORGE -> saveResolvedVersions(loader, resolveForgeVersions())
 			Loader.NEOFORGE -> saveResolvedVersions(loader, resolveNeoForgeVersions())
@@ -49,6 +51,7 @@ object LoaderVersionStore {
 		return when(loader) {
 			Loader.FABRIC -> fetchFabricStyleVersions(loader, fabric_meta_url, game_version_id)
 			Loader.LEGACY_FABRIC -> fetchFabricStyleVersions(loader, legacy_fabric_meta_url, game_version_id)
+			Loader.BABRIC -> fetchFabricStyleVersions(loader, babric_meta_url, game_version_id)
 			Loader.QUILT -> fetchQuiltVersions(game_version_id)
 			Loader.FORGE, Loader.NEOFORGE -> fetchResolvedVersions(loader, game_version_id)
 			Loader.VANILLA -> emptyList()
