@@ -2,11 +2,11 @@ package quantum.shared
 
 enum class Loader(val display_name: String) {
 	VANILLA("Vanilla"),
-	FABRIC("Fabric"),
-	LEGACY_FABRIC("Legacy Fabric"),
 	BABRIC("Babric"),
-	QUILT("Quilt"),
+	FABRIC("Fabric"),
 	FORGE("Forge"),
+	LEGACY_FABRIC("Legacy Fabric"),
+	LITELOADER("LiteLoader"),
 	NEOFORGE("NeoForge"),
-	LITELOADER("LiteLoader")
+	QUILT("Quilt")
 }
