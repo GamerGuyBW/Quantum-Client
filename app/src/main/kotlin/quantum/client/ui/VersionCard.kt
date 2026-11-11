@@ -17,9 +17,7 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -34,7 +32,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.jetbrains.skia.Image as SkiaImage
+import org.jetbrains.skia.Rect
+import org.jetbrains.skia.SamplingMode
+import org.jetbrains.skia.Surface
 import quantum.shared.VersionPreviewStore
+
+private const val thumbnail_max_width = 384
 
 data class VersionCardPreview(
 	val image_url: String?,
@@ -43,18 +46,26 @@ data class VersionCardPreview(
 )
 
 @Composable
-fun VersionCard(version_id: String, title: String, preview: VersionCardPreview?, is_selected: Boolean, is_visible: Boolean, onClick: () -> Unit) {
+fun VersionCard(
+	title: String,
+	preview: VersionCardPreview?,
+	thumbnail: ImageBitmap?,
+	is_selected: Boolean,
+	is_visible: Boolean,
+	onThumbnailLoaded: (String, ImageBitmap) -> Unit,
+	onClick: () -> Unit
+) {
 	val shape = RoundedCornerShape(10.dp)
 	val border_colour = if(is_selected) QuantumColours.blue else QuantumColours.border
 	val border_width = if(is_selected) 2.dp else 1.dp
 	val image_url = preview?.image_url
+	val latest_on_thumbnail_loaded by rememberUpdatedState(onThumbnailLoaded)
+	val has_thumbnail = thumbnail != null
 
-	var thumbnail by remember(version_id, image_url) { mutableStateOf<ImageBitmap?>(null) }
-
-	LaunchedEffect(image_url, is_visible) {
-		if(is_visible && image_url != null && thumbnail == null) {
-			loadInterruptibly { SkiaImage.makeFromEncoded(VersionPreviewStore.loadImage(image_url)).toComposeImageBitmap() }.onSuccess { image ->
-				thumbnail = image
+	LaunchedEffect(image_url, is_visible, has_thumbnail) {
+		if(is_visible && image_url != null && !has_thumbnail) {
+			loadInterruptibly { decodeImage(VersionPreviewStore.loadImage(image_url)) }.onSuccess { image ->
+				latest_on_thumbnail_loaded(image_url, image)
 			}
 		}
 	}
@@ -74,11 +85,9 @@ fun VersionCard(version_id: String, title: String, preview: VersionCardPreview?,
 				.aspectRatio(16f / 9f)
 				.background(QuantumColours.sidebar)
 		) {
-			val loaded_thumbnail = thumbnail
-
-			if(loaded_thumbnail != null) {
+			if(thumbnail != null) {
 				Image(
-					bitmap = loaded_thumbnail,
+					bitmap = thumbnail,
 					contentDescription = null,
 					contentScale = ContentScale.Crop,
 					modifier = Modifier.fillMaxSize()
@@ -141,5 +150,33 @@ private fun DefaultThumbnail(modifier: Modifier = Modifier) {
 
 		drawPath(outline, color = QuantumColours.turquoise, style = line_style)
 		drawPath(inner_edges, color = QuantumColours.turquoise, style = line_style)
+	}
+}
+
+fun decodeImage(image_bytes: ByteArray): ImageBitmap {
+	val source_image = SkiaImage.makeFromEncoded(image_bytes)
+
+	if(source_image.width <= thumbnail_max_width) {
+		return source_image.toComposeImageBitmap()
+	}
+
+	val scaled_width = thumbnail_max_width
+	val scaled_height = maxOf(1, source_image.height * thumbnail_max_width / source_image.width)
+	val surface = Surface.makeRasterN32Premul(scaled_width, scaled_height)
+
+	try {
+		surface.canvas.drawImageRect(
+			source_image,
+			Rect.makeWH(source_image.width.toFloat(), source_image.height.toFloat()),
+			Rect.makeWH(scaled_width.toFloat(), scaled_height.toFloat()),
+			SamplingMode.LINEAR,
+			null,
+			true
+		)
+
+		return surface.makeImageSnapshot().toComposeImageBitmap()
+	} finally {
+		surface.close()
+		source_image.close()
 	}
 }

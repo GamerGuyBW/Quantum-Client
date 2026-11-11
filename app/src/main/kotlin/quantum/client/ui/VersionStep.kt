@@ -24,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -35,6 +36,7 @@ import quantum.shared.VersionType
 import quantum.shared.WikiVersionDetails
 
 private const val scroll_settle_millis = 120L
+private const val nearby_rows = 2
 
 data class VersionChoice(
 	val value: String,
@@ -66,19 +68,80 @@ fun VersionStep(
 				.distinct()
 		}
 	}
+	val nearby_version_ids by remember(version_choices) {
+		derivedStateOf {
+			val visible_items = grid_state.layoutInfo.visibleItemsInfo
+
+			if(visible_items.isEmpty() || version_choices.isEmpty()) {
+				emptyList()
+			} else {
+				val column_count = visible_items.maxOf { item_info -> item_info.column } + 1
+				val first_index = (visible_items.minOf { item_info -> item_info.index } - column_count * nearby_rows).coerceAtLeast(0)
+				val last_index = (visible_items.maxOf { item_info -> item_info.index } + column_count * nearby_rows).coerceAtMost(version_choices.lastIndex)
+
+				version_choices.subList(first_index, last_index + 1).map { version_choice -> version_choice.version_id }.distinct()
+			}
+		}
+	}
 
 	var mojang_image_urls by remember { mutableStateOf<Map<String, String?>>(emptyMap()) }
 	var wiki_details by remember { mutableStateOf<Map<String, WikiVersionDetails?>>(emptyMap()) }
 	var wiki_image_urls by remember { mutableStateOf<Map<String, String?>>(emptyMap()) }
+	var thumbnails by remember { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
+
+	LaunchedEffect(nearby_version_ids) {
+		val nearby_set = nearby_version_ids.toSet()
+		mojang_image_urls = mojang_image_urls.filterKeys { version_id -> version_id in nearby_set }
+		wiki_details = wiki_details.filterKeys { version_id -> version_id in nearby_set }
+
+		val nearby_image_files = wiki_details.values.mapNotNull { details -> details?.image_file }.toSet()
+		wiki_image_urls = wiki_image_urls.filterKeys { image_file -> image_file in nearby_image_files }
+
+		val nearby_image_urls = nearby_version_ids.mapNotNull { version_id -> cardPreview(version_id, mojang_image_urls, wiki_details, wiki_image_urls)?.image_url }.toSet()
+		thumbnails = thumbnails.filterKeys { image_url -> image_url in nearby_image_urls }
+
+		if(nearby_version_ids.isEmpty()) {
+			return@LaunchedEffect
+		}
+
+		val unknown_mojang_ids = nearby_version_ids.filter { version_id -> version_id !in mojang_image_urls }
+		if(unknown_mojang_ids.isNotEmpty()) {
+			loadInterruptibly { VersionPreviewStore.patchNoteImageUrls(unknown_mojang_ids, allow_download = false) }.onSuccess { image_urls ->
+				mojang_image_urls = mojang_image_urls + image_urls
+			}
+		}
+
+		val unknown_wiki_ids = nearby_version_ids.filter { version_id -> version_id !in wiki_details }
+		if(unknown_wiki_ids.isNotEmpty()) {
+			loadInterruptibly { VersionPreviewStore.wikiDetails(unknown_wiki_ids, allow_download = false) }.onSuccess { details ->
+				wiki_details = wiki_details + details
+			}
+		}
+
+		val unknown_image_files = nearby_version_ids
+			.mapNotNull { version_id -> wiki_details[version_id]?.image_file }
+			.filter { image_file -> image_file !in wiki_image_urls }
+			.distinct()
+		if(unknown_image_files.isNotEmpty()) {
+			loadInterruptibly { VersionPreviewStore.wikiImageUrls(unknown_image_files, allow_download = false) }.onSuccess { image_urls ->
+				wiki_image_urls = wiki_image_urls + image_urls
+			}
+		}
+
+		nearby_version_ids
+			.mapNotNull { version_id -> cardPreview(version_id, mojang_image_urls, wiki_details, wiki_image_urls)?.image_url }
+			.distinct()
+			.filter { image_url -> image_url !in thumbnails }
+			.forEach { image_url ->
+				loadInterruptibly { VersionPreviewStore.cachedImage(image_url)?.let { image_bytes -> decodeImage(image_bytes) } }.onSuccess { image ->
+					if(image != null) {
+						thumbnails = thumbnails + (image_url to image)
+					}
+				}
+			}
+	}
 
 	LaunchedEffect(visible_version_ids) {
-		val visible_set = visible_version_ids.toSet()
-		mojang_image_urls = mojang_image_urls.filterKeys { version_id -> version_id in visible_set }
-		wiki_details = wiki_details.filterKeys { version_id -> version_id in visible_set }
-
-		val visible_image_files = wiki_details.values.mapNotNull { details -> details?.image_file }.toSet()
-		wiki_image_urls = wiki_image_urls.filterKeys { image_file -> image_file in visible_image_files }
-
 		if(visible_version_ids.isEmpty()) {
 			return@LaunchedEffect
 		}
@@ -145,12 +208,15 @@ fun VersionStep(
 					verticalArrangement = Arrangement.spacedBy(10.dp)
 				) {
 					items(version_choices, key = { version_choice -> version_choice.value }) { version_choice ->
+						val preview = cardPreview(version_choice.version_id, mojang_image_urls, wiki_details, wiki_image_urls)
+
 						VersionCard(
-							version_id = version_choice.version_id,
 							title = version_choice.title,
-							preview = cardPreview(version_choice.version_id, mojang_image_urls, wiki_details, wiki_image_urls),
+							preview = preview,
+							thumbnail = preview?.image_url?.let { image_url -> thumbnails[image_url] },
 							is_selected = version_choice.value == selected_version,
 							is_visible = version_choice.value in visible_keys,
+							onThumbnailLoaded = { image_url, image -> thumbnails = thumbnails + (image_url to image) },
 							onClick = { onVersionSelected(version_choice.value) }
 						)
 					}

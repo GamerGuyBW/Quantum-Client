@@ -92,6 +92,14 @@ object QuantumCache {
 		}
 	}
 
+	fun readCachedText(url: String): String? {
+		return readText("text_${cacheKey(url)}")
+	}
+
+	fun readCachedBytes(url: String): ByteArray? {
+		return readBytes("bytes_${cacheKey(url)}")
+	}
+
 	fun readRecord(source: String): String? {
 		return readText("record_${cacheKey(source)}")
 	}

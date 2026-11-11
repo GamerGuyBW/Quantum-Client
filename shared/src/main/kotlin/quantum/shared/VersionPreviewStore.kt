@@ -51,8 +51,9 @@ object VersionPreviewStore {
 	private const val wiki_titles_per_request = 50
 	private const val thumbnail_width = 320
 
-	fun patchNoteImageUrls(version_ids: Collection<String>): Map<String, String?> {
-		val notes = QuantumJson.json.decodeFromString(PatchNotes.serializer(), QuantumCache.fetchText(patch_notes_url))
+	fun patchNoteImageUrls(version_ids: Collection<String>, allow_download: Boolean = true): Map<String, String?> {
+		val notes_text = if(allow_download) QuantumCache.fetchText(patch_notes_url) else QuantumCache.readCachedText(patch_notes_url) ?: return emptyMap()
+		val notes = QuantumJson.json.decodeFromString(PatchNotes.serializer(), notes_text)
 		val notes_uri = URI.create(patch_notes_url)
 		val image_paths = notes.entries
 			.mapNotNull { entry -> entry.image?.let { image -> entry.version to image.url } }
@@ -61,7 +62,7 @@ object VersionPreviewStore {
 		return version_ids.associateWith { version_id -> image_paths[version_id]?.let { image_path -> notes_uri.resolve(image_path).toString() } }
 	}
 
-	fun wikiDetails(version_ids: Collection<String>): Map<String, WikiVersionDetails?> {
+	fun wikiDetails(version_ids: Collection<String>, allow_download: Boolean = true): Map<String, WikiVersionDetails?> {
 		val results = mutableMapOf<String, WikiVersionDetails?>()
 		val uncached_ids = mutableListOf<String>()
 
@@ -75,6 +76,10 @@ object VersionPreviewStore {
 			}
 		}
 
+		if(!allow_download) {
+			return results
+		}
+
 		uncached_ids.chunked(wiki_titles_per_request).forEach { id_chunk ->
 			fetchWikiDetails(id_chunk).forEach { (version_id, details) ->
 				QuantumCache.writeRecord(wikiDetailsSource(version_id), QuantumJson.compact_json.encodeToString(WikiDetailsRecord.serializer(), WikiDetailsRecord(details)))
@@ -85,7 +90,7 @@ object VersionPreviewStore {
 		return results
 	}
 
-	fun wikiImageUrls(image_files: Collection<String>): Map<String, String?> {
+	fun wikiImageUrls(image_files: Collection<String>, allow_download: Boolean = true): Map<String, String?> {
 		val results = mutableMapOf<String, String?>()
 		val uncached_files = mutableListOf<String>()
 
@@ -97,6 +102,10 @@ object VersionPreviewStore {
 			} else {
 				uncached_files.add(image_file)
 			}
+		}
+
+		if(!allow_download) {
+			return results
 		}
 
 		uncached_files.chunked(wiki_titles_per_request).forEach { file_chunk ->
@@ -111,6 +120,10 @@ object VersionPreviewStore {
 
 	fun loadImage(image_url: String): ByteArray {
 		return QuantumCache.fetchBytes(image_url)
+	}
+
+	fun cachedImage(image_url: String): ByteArray? {
+		return QuantumCache.readCachedBytes(image_url)
 	}
 
 	private fun fetchWikiDetails(version_ids: List<String>): Map<String, WikiVersionDetails?> {
