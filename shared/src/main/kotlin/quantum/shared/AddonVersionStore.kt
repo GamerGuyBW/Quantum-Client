@@ -7,10 +7,12 @@ import kotlinx.serialization.json.jsonObject
 object AddonVersionStore {
 	private const val liteloader_versions_url = "https://dl.liteloader.com/versions/versions.json"
 	private const val launchwrapper_main_class = "net.minecraft.launchwrapper.Launch"
+	private const val nilloader_maven_url = "https://repo.sleeping.town/com/unascribed/nilloader/"
 
 	fun prepareAddon(addon: Addon) {
 		val support = when(addon) {
 			Addon.LITELOADER -> liteLoaderSupport()
+			Addon.NILLOADER -> universalSupport()
 		}
 
 		saveSupport(addon, support)
@@ -26,13 +28,19 @@ object AddonVersionStore {
 	fun fetchVersions(addon: Addon, game_version_id: String): List<LoaderVersion> {
 		return when(addon) {
 			Addon.LITELOADER -> fetchLiteLoaderVersions(game_version_id)
+			Addon.NILLOADER -> fetchNilLoaderVersions()
 		}
 	}
 
 	fun needsBaseCheck(addon: Addon, loader: Loader): Boolean {
 		return when(addon) {
 			Addon.LITELOADER -> loader == Loader.FORGE
+			Addon.NILLOADER -> false
 		}
+	}
+
+	fun isUniversal(addon: Addon): Boolean {
+		return addon == Addon.NILLOADER
 	}
 
 	fun verifyBase(addon: Addon, loader: Loader, loader_version: LoaderVersion?): String? {
@@ -65,6 +73,25 @@ object AddonVersionStore {
 			Loader.VANILLA to game_versions,
 			Loader.FORGE to forge_game_versions
 		)
+	}
+
+	private fun universalSupport(): Map<Loader, List<String>> {
+		val game_versions = VersionStore.fetchManifest().versions.map { version -> version.id }
+		return Loader.entries.associateWith { game_versions }
+	}
+
+	private fun fetchNilLoaderVersions(): List<LoaderVersion> {
+		val metadata_text = QuantumCache.fetchText(nilloader_maven_url + "maven-metadata.xml")
+
+		return LoaderVersionStore.parseMavenVersions(metadata_text)
+			.asReversed()
+			.map { nilloader_version ->
+				LoaderVersion(
+					version = nilloader_version,
+					display_name = nilloader_version,
+					is_stable = !SemanticVersions.isPreRelease(nilloader_version)
+				)
+			}
 	}
 
 	private fun liteLoaderGameVersions(): JsonObject {

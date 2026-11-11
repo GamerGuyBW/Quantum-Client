@@ -54,8 +54,14 @@ fun AddonRow(
 	val is_available = loader_game_versions != null && game_version_id in loader_game_versions
 	val loaded_versions = addon_versions
 	val version_options = remember(loaded_versions) { loaderVersionOptions(loaded_versions.orEmpty()) }
-	val tooltip_sections = remember(addon_support, manifest) {
-		addon_support?.map { (loader, game_versions) -> SupportSection(loader.full_name, VersionRanges.describe(game_versions, manifest)) }
+	val tooltip_sections = remember(addon, addon_support, manifest) {
+		if(addon_support == null) {
+			null
+		} else if(AddonVersionStore.isUniversal(addon)) {
+			listOf(SupportSection(null, listOf("Every loader and every version.")))
+		} else {
+			addon_support.map { (loader, game_versions) -> SupportSection(loader.full_name, VersionRanges.describe(game_versions, manifest)) }
+		}
 	}
 
 	LaunchedEffect(is_available, is_checked) {

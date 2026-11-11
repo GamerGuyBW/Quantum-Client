@@ -298,7 +298,7 @@ object LoaderVersionStore {
 		}
 	}
 
-	private fun parseMavenVersions(metadata_text: String): List<String> {
+	internal fun parseMavenVersions(metadata_text: String): List<String> {
 		val document_factory = DocumentBuilderFactory.newInstance()
 		document_factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
 
