@@ -4,8 +4,12 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantLock
 
 object QuantumCache {
+	private val file_locks = ConcurrentHashMap<String, ReentrantLock>()
+
 	fun clear() {
 		val cache_folder = QuantumPaths.cache_folder
 
@@ -40,41 +44,60 @@ object QuantumCache {
 
 	fun fetchText(url: String): String {
 		val file_name = "text_${cacheKey(url)}"
-		val cached_text = readText(file_name)
 
-		if(cached_text != null) {
-			return cached_text
+		return withFileLock(file_name) {
+			val cached_text = readText(file_name)
+
+			if(cached_text != null) {
+				cached_text
+			} else {
+				val fetched_text = QuantumHttp.fetchText(url)
+				writeText(file_name, fetched_text)
+				fetched_text
+			}
 		}
-
-		val fetched_text = QuantumHttp.fetchText(url)
-		writeText(file_name, fetched_text)
-		return fetched_text
 	}
 
 	fun fetchBytes(url: String): ByteArray {
 		val file_name = "bytes_${cacheKey(url)}"
-		val cached_bytes = readBytes(file_name)
 
-		if(cached_bytes != null) {
-			return cached_bytes
+		return withFileLock(file_name) {
+			val cached_bytes = readBytes(file_name)
+
+			if(cached_bytes != null) {
+				cached_bytes
+			} else {
+				val fetched_bytes = QuantumHttp.fetchBytes(url).body
+				writeBytes(file_name, fetched_bytes)
+				fetched_bytes
+			}
 		}
-
-		val fetched_bytes = QuantumHttp.fetchBytes(url).body
-		writeBytes(file_name, fetched_bytes)
-		return fetched_bytes
 	}
 
 	fun bytesOrLoad(source: String, load: () -> ByteArray?): ByteArray? {
 		val file_name = "entry_${cacheKey(source)}"
-		val cached_bytes = readBytes(file_name)
 
-		if(cached_bytes != null) {
-			return cached_bytes
+		return withFileLock(file_name) {
+			val cached_bytes = readBytes(file_name)
+
+			if(cached_bytes != null) {
+				cached_bytes
+			} else {
+				val loaded_bytes = load()
+				if(loaded_bytes != null) {
+					writeBytes(file_name, loaded_bytes)
+				}
+				loaded_bytes
+			}
 		}
+	}
 
-		val loaded_bytes = load() ?: return null
-		writeBytes(file_name, loaded_bytes)
-		return loaded_bytes
+	fun readRecord(source: String): String? {
+		return readText("record_${cacheKey(source)}")
+	}
+
+	fun writeRecord(source: String, text: String) {
+		writeText("record_${cacheKey(source)}", text)
 	}
 
 	@Synchronized
@@ -90,6 +113,21 @@ object QuantumCache {
 		}
 
 		return Files.readAllLines(cache_file).filter { line -> line.isNotBlank() }
+	}
+
+	private fun <T> withFileLock(file_name: String, action: () -> T): T {
+		val file_lock = file_locks.computeIfAbsent(file_name) { ReentrantLock() }
+		file_lock.lockInterruptibly()
+
+		try {
+			return action()
+		} finally {
+			file_lock.unlock()
+
+			if(!file_lock.hasQueuedThreads()) {
+				file_locks.remove(file_name, file_lock)
+			}
+		}
 	}
 
 	private fun cacheKey(text: String): String {

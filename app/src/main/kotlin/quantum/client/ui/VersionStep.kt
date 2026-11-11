@@ -16,15 +16,25 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import quantum.shared.GameVersions
 import quantum.shared.VersionManifest
+import quantum.shared.VersionPreviewStore
 import quantum.shared.VersionType
+import quantum.shared.WikiVersionDetails
+
+private const val scroll_settle_millis = 120L
 
 data class VersionChoice(
 	val value: String,
@@ -48,6 +58,65 @@ fun VersionStep(
 		derivedStateOf { grid_state.layoutInfo.visibleItemsInfo.map { item_info -> item_info.key }.toSet() }
 	}
 	val version_choices = remember(manifest, search_text, type_filter) { versionChoices(manifest, search_text, type_filter) }
+	val visible_version_ids by remember(version_choices) {
+		derivedStateOf {
+			version_choices
+				.filter { version_choice -> version_choice.value in visible_keys }
+				.map { version_choice -> version_choice.version_id }
+				.distinct()
+		}
+	}
+
+	var mojang_image_urls by remember { mutableStateOf<Map<String, String?>>(emptyMap()) }
+	var wiki_details by remember { mutableStateOf<Map<String, WikiVersionDetails?>>(emptyMap()) }
+	var wiki_image_urls by remember { mutableStateOf<Map<String, String?>>(emptyMap()) }
+
+	LaunchedEffect(visible_version_ids) {
+		val visible_set = visible_version_ids.toSet()
+		mojang_image_urls = mojang_image_urls.filterKeys { version_id -> version_id in visible_set }
+		wiki_details = wiki_details.filterKeys { version_id -> version_id in visible_set }
+
+		val visible_image_files = wiki_details.values.mapNotNull { details -> details?.image_file }.toSet()
+		wiki_image_urls = wiki_image_urls.filterKeys { image_file -> image_file in visible_image_files }
+
+		if(visible_version_ids.isEmpty()) {
+			return@LaunchedEffect
+		}
+
+		delay(scroll_settle_millis)
+
+		coroutineScope {
+			launch {
+				val missing_ids = visible_version_ids.filter { version_id -> version_id !in mojang_image_urls }
+				if(missing_ids.isNotEmpty()) {
+					loadInterruptibly { VersionPreviewStore.patchNoteImageUrls(missing_ids) }.onSuccess { image_urls ->
+						mojang_image_urls = mojang_image_urls + image_urls
+					}
+				}
+			}
+
+			launch {
+				val missing_ids = visible_version_ids.filter { version_id -> version_id !in wiki_details }
+				if(missing_ids.isNotEmpty()) {
+					loadInterruptibly { VersionPreviewStore.wikiDetails(missing_ids) }.onSuccess { details ->
+						wiki_details = wiki_details + details
+					}
+				}
+			}
+		}
+
+		val needed_image_files = visible_version_ids
+			.filter { version_id -> version_id in mojang_image_urls && mojang_image_urls[version_id] == null }
+			.mapNotNull { version_id -> wiki_details[version_id]?.image_file }
+			.filter { image_file -> image_file !in wiki_image_urls }
+			.distinct()
+
+		if(needed_image_files.isNotEmpty()) {
+			loadInterruptibly { VersionPreviewStore.wikiImageUrls(needed_image_files) }.onSuccess { image_urls ->
+				wiki_image_urls = wiki_image_urls + image_urls
+			}
+		}
+	}
 
 	Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
 		Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
@@ -79,6 +148,7 @@ fun VersionStep(
 						VersionCard(
 							version_id = version_choice.version_id,
 							title = version_choice.title,
+							preview = cardPreview(version_choice.version_id, mojang_image_urls, wiki_details, wiki_image_urls),
 							is_selected = version_choice.value == selected_version,
 							is_visible = version_choice.value in visible_keys,
 							onClick = { onVersionSelected(version_choice.value) }
@@ -95,6 +165,30 @@ fun VersionStep(
 			}
 		}
 	}
+}
+
+private fun cardPreview(
+	version_id: String,
+	mojang_image_urls: Map<String, String?>,
+	wiki_details: Map<String, WikiVersionDetails?>,
+	wiki_image_urls: Map<String, String?>
+): VersionCardPreview? {
+	val is_mojang_checked = version_id in mojang_image_urls
+	val is_wiki_checked = version_id in wiki_details
+
+	if(!is_mojang_checked && !is_wiki_checked) {
+		return null
+	}
+
+	val details = wiki_details[version_id]
+	val wiki_image_file = details?.image_file
+	val mojang_image_url = mojang_image_urls[version_id]
+	val wiki_image_url = wiki_image_file?.let { image_file -> wiki_image_urls[image_file] }
+	val is_wiki_image_checked = wiki_image_file == null || wiki_image_file in wiki_image_urls
+
+	val is_image_missing = is_mojang_checked && mojang_image_url == null && is_wiki_checked && is_wiki_image_checked && wiki_image_url == null
+
+	return VersionCardPreview(mojang_image_url ?: wiki_image_url, details?.name, is_image_missing)
 }
 
 private fun versionChoices(manifest: VersionManifest, search_text: String, type_filter: VersionType?): List<VersionChoice> {

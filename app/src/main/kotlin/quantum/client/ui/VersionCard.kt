@@ -33,74 +33,29 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import kotlin.coroutines.cancellation.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runInterruptible
 import org.jetbrains.skia.Image as SkiaImage
 import quantum.shared.VersionPreviewStore
-import quantum.shared.WikiVersionDetails
+
+data class VersionCardPreview(
+	val image_url: String?,
+	val name: String?,
+	val is_image_missing: Boolean
+)
 
 @Composable
-fun VersionCard(version_id: String, title: String, is_selected: Boolean, is_visible: Boolean, onClick: () -> Unit) {
+fun VersionCard(version_id: String, title: String, preview: VersionCardPreview?, is_selected: Boolean, is_visible: Boolean, onClick: () -> Unit) {
 	val shape = RoundedCornerShape(10.dp)
 	val border_colour = if(is_selected) QuantumColours.blue else QuantumColours.border
 	val border_width = if(is_selected) 2.dp else 1.dp
+	val image_url = preview?.image_url
 
-	var mojang_image_url by remember(version_id) { mutableStateOf<String?>(null) }
-	var is_mojang_checked by remember(version_id) { mutableStateOf(false) }
-	var wiki_details by remember(version_id) { mutableStateOf<WikiVersionDetails?>(null) }
-	var is_wiki_checked by remember(version_id) { mutableStateOf(false) }
-	var thumbnail by remember(version_id) { mutableStateOf<ImageBitmap?>(null) }
-	var is_thumbnail_missing by remember(version_id) { mutableStateOf(false) }
+	var thumbnail by remember(version_id, image_url) { mutableStateOf<ImageBitmap?>(null) }
 
-	LaunchedEffect(version_id, is_visible) {
-		if(is_visible && !is_mojang_checked) {
-			loadInterruptibly { VersionPreviewStore.patchNoteImageUrl(version_id) }.onSuccess { image_url ->
-				mojang_image_url = image_url
-				is_mojang_checked = true
+	LaunchedEffect(image_url, is_visible) {
+		if(is_visible && image_url != null && thumbnail == null) {
+			loadInterruptibly { SkiaImage.makeFromEncoded(VersionPreviewStore.loadImage(image_url)).toComposeImageBitmap() }.onSuccess { image ->
+				thumbnail = image
 			}
-		}
-	}
-
-	LaunchedEffect(version_id, is_visible) {
-		if(is_visible && !is_wiki_checked) {
-			loadInterruptibly { VersionPreviewStore.wikiDetails(version_id) }.onSuccess { details ->
-				wiki_details = details
-				is_wiki_checked = true
-			}
-		}
-	}
-
-	LaunchedEffect(version_id, is_visible, is_mojang_checked, mojang_image_url, is_wiki_checked, wiki_details) {
-		if(!is_visible || thumbnail != null || is_thumbnail_missing || !is_mojang_checked) {
-			return@LaunchedEffect
-		}
-
-		val known_mojang_url = mojang_image_url
-		val wiki_image_file = wiki_details?.image_file
-
-		val image_url = if(known_mojang_url != null) {
-			known_mojang_url
-		} else if(!is_wiki_checked) {
-			return@LaunchedEffect
-		} else if(wiki_image_file == null) {
-			is_thumbnail_missing = true
-			return@LaunchedEffect
-		} else {
-			val wiki_image_result = loadInterruptibly { VersionPreviewStore.wikiImageUrl(wiki_image_file) }
-			if(wiki_image_result.isFailure) {
-				return@LaunchedEffect
-			}
-			wiki_image_result.getOrNull()
-		}
-
-		if(image_url == null) {
-			is_thumbnail_missing = true
-			return@LaunchedEffect
-		}
-
-		loadInterruptibly { SkiaImage.makeFromEncoded(VersionPreviewStore.loadImage(image_url)).toComposeImageBitmap() }.onSuccess { image ->
-			thumbnail = image
 		}
 	}
 
@@ -128,7 +83,7 @@ fun VersionCard(version_id: String, title: String, is_selected: Boolean, is_visi
 					contentScale = ContentScale.Crop,
 					modifier = Modifier.fillMaxSize()
 				)
-			} else if(is_thumbnail_missing) {
+			} else if(preview?.is_image_missing == true) {
 				DefaultThumbnail(modifier = Modifier.fillMaxSize())
 			}
 		}
@@ -141,7 +96,7 @@ fun VersionCard(version_id: String, title: String, is_selected: Boolean, is_visi
 				overflow = TextOverflow.Ellipsis
 			)
 			BasicText(
-				text = wiki_details?.name ?: " ",
+				text = preview?.name ?: " ",
 				style = QuantumTextStyles.label,
 				maxLines = 1,
 				overflow = TextOverflow.Ellipsis
@@ -186,15 +141,5 @@ private fun DefaultThumbnail(modifier: Modifier = Modifier) {
 
 		drawPath(outline, color = QuantumColours.turquoise, style = line_style)
 		drawPath(inner_edges, color = QuantumColours.turquoise, style = line_style)
-	}
-}
-
-private suspend fun <T> loadInterruptibly(load: () -> T): Result<T> {
-	return try {
-		Result.success(runInterruptible(Dispatchers.IO) { load() })
-	} catch(error: CancellationException) {
-		throw error
-	} catch(error: Exception) {
-		Result.failure(error)
 	}
 }
