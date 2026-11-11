@@ -57,3 +57,13 @@ internal data class QuiltLoaderInfo(
 internal data class ForgePromotions(
 	val promos: Map<String, String> = emptyMap()
 )
+
+@Serializable
+internal data class LiteLoaderBuild(
+	val version: String,
+	val build: String? = null,
+	val file: String,
+	val md5: String,
+	val stream: String,
+	val timestamp: String
+)

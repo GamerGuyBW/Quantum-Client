@@ -7,5 +7,6 @@ enum class Loader(val display_name: String) {
 	BABRIC("Babric"),
 	QUILT("Quilt"),
 	FORGE("Forge"),
-	NEOFORGE("NeoForge")
+	NEOFORGE("NeoForge"),
+	LITELOADER("LiteLoader")
 }
