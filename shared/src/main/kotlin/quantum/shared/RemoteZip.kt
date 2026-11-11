@@ -16,6 +16,10 @@ object RemoteZip {
 	private const val zip64_marker = 0xFFFFFFFFL
 
 	fun readEntry(url: String, entry_name: String): ByteArray? {
+		return QuantumCache.bytesOrLoad("$url!$entry_name") { readRemoteEntry(url, entry_name) }
+	}
+
+	private fun readRemoteEntry(url: String, entry_name: String): ByteArray? {
 		val tail = try {
 			QuantumHttp.fetchBytes(url, "bytes=-${end_record_size + max_comment_size}")
 		} catch(error: HttpStatusException) {

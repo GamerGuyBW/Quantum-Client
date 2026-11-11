@@ -20,7 +20,6 @@ fun main() {
 
 	Runtime.getRuntime().addShutdownHook(Thread {
 		VersionSetup.stop()
-		QuantumCache.clear()
 	})
 
 	val settings = SettingsStore.load()

@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +44,9 @@ fun VersionStep(
 	modifier: Modifier = Modifier
 ) {
 	val grid_state = rememberLazyGridState()
+	val visible_keys by remember(grid_state) {
+		derivedStateOf { grid_state.layoutInfo.visibleItemsInfo.map { item_info -> item_info.key }.toSet() }
+	}
 	val version_choices = remember(manifest, search_text, type_filter) { versionChoices(manifest, search_text, type_filter) }
 
 	Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -75,6 +80,7 @@ fun VersionStep(
 							version_id = version_choice.version_id,
 							title = version_choice.title,
 							is_selected = version_choice.value == selected_version,
+							is_visible = version_choice.value in visible_keys,
 							onClick = { onVersionSelected(version_choice.value) }
 						)
 					}

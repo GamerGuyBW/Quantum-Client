@@ -102,7 +102,7 @@ object LoaderVersionStore {
 
 	private fun profileGameVersion(profile_url: String): String? {
 		val profile_text = try {
-			QuantumHttp.fetchText(profile_url)
+			QuantumCache.fetchText(profile_url)
 		} catch(error: HttpStatusException) {
 			if(error.status_code == 400 || error.status_code == 404) {
 				return null
@@ -193,13 +193,13 @@ object LoaderVersionStore {
 	}
 
 	private fun fetchGameVersionList(meta_url: String): Set<String> {
-		val file_text = QuantumHttp.fetchText(meta_url + "game")
+		val file_text = QuantumCache.fetchText(meta_url + "game")
 		val entries = QuantumJson.json.decodeFromString(ListSerializer(LoaderGameVersion.serializer()), file_text)
 		return entries.map { entry -> entry.version }.toSet()
 	}
 
 	internal fun forgeVersionMapping(): Map<String, List<String>> {
-		val mapping_text = QuantumCache.textOrFetch("forge_version_mapping.json", forge_mapping_url)
+		val mapping_text = QuantumCache.fetchText(forge_mapping_url)
 		return QuantumJson.json.decodeFromString(MapSerializer(String.serializer(), ListSerializer(String.serializer())), mapping_text)
 	}
 
@@ -222,8 +222,7 @@ object LoaderVersionStore {
 
 	private fun fetchFabricStyleVersions(loader: Loader, meta_url: String, game_version_id: String): List<LoaderVersion> {
 		val encoded_game_version = encodeForPath(game_version_id)
-		val cache_name = "loader_versions_${loader.name.lowercase()}_${QuantumCache.safeName(game_version_id)}.json"
-		val file_text = QuantumCache.textOrFetch(cache_name, "${meta_url}loader/$encoded_game_version")
+		val file_text = QuantumCache.fetchText("${meta_url}loader/$encoded_game_version")
 		val entries = QuantumJson.json.decodeFromString(ListSerializer(FabricLoaderEntry.serializer()), file_text)
 
 		return entries.map { entry ->
@@ -240,8 +239,7 @@ object LoaderVersionStore {
 
 	private fun fetchQuiltVersions(game_version_id: String): List<LoaderVersion> {
 		val encoded_game_version = encodeForPath(game_version_id)
-		val cache_name = "loader_versions_quilt_${QuantumCache.safeName(game_version_id)}.json"
-		val file_text = QuantumCache.textOrFetch(cache_name, "${quilt_meta_url}loader/$encoded_game_version")
+		val file_text = QuantumCache.fetchText("${quilt_meta_url}loader/$encoded_game_version")
 		val entries = QuantumJson.json.decodeFromString(ListSerializer(QuiltLoaderEntry.serializer()), file_text)
 
 		return entries.map { entry ->
@@ -257,13 +255,13 @@ object LoaderVersionStore {
 	}
 
 	private fun ornitheGenerations(): OrnitheGenerations {
-		val generations_text = QuantumCache.textOrFetch("ornithe_generations.json", "${ornithe_meta_url}intermediary_generations")
+		val generations_text = QuantumCache.fetchText("${ornithe_meta_url}intermediary_generations")
 		return QuantumJson.json.decodeFromString(OrnitheGenerations.serializer(), generations_text)
 	}
 
 	private fun ornitheGameVersions(): Map<Int, Set<String>> {
 		return (1..ornitheGenerations().latest_generation).associateWith { generation ->
-			val game_text = QuantumCache.textOrFetch("ornithe_game_gen$generation.json", "${ornithe_meta_url}gen$generation/game")
+			val game_text = QuantumCache.fetchText("${ornithe_meta_url}gen$generation/game")
 			val game_versions = QuantumJson.json.decodeFromString(ListSerializer(OrnitheGameVersion.serializer()), game_text)
 
 			game_versions
@@ -277,8 +275,7 @@ object LoaderVersionStore {
 		val loader_path = if(loader == Loader.ORNITHE_QUILT) "quilt-loader" else "fabric-loader"
 		val encoded_game_version = encodeForPath(game_version_id)
 		val base_url = "${ornithe_meta_url}gen$generation/$loader_path/"
-		val cache_name = "loader_versions_${loader.name.lowercase()}_gen${generation}_${QuantumCache.safeName(game_version_id)}.json"
-		val file_text = QuantumCache.textOrFetch(cache_name, base_url + encoded_game_version)
+		val file_text = QuantumCache.fetchText(base_url + encoded_game_version)
 		val entries = QuantumJson.json.decodeFromString(ListSerializer(FabricLoaderEntry.serializer()), file_text)
 
 		return entries.map { entry ->
@@ -294,7 +291,7 @@ object LoaderVersionStore {
 	}
 
 	private fun mavenArtifactList(base_url: String, artifact_name: String): List<MavenArtifact> {
-		val metadata_text = QuantumHttp.fetchText(base_url + "maven-metadata.xml")
+		val metadata_text = QuantumCache.fetchText(base_url + "maven-metadata.xml")
 
 		return parseMavenVersions(metadata_text).map { version ->
 			MavenArtifact(version, "$base_url$version/$artifact_name-$version-installer.jar")

@@ -84,6 +84,9 @@ object QuantumHttp {
 				}
 			} catch(error: IOException) {
 				last_error = error
+			} catch(error: InterruptedException) {
+				outcome = RequestOutcome.NOT_TIMED
+				throw error
 			} finally {
 				HostLimiter.release(host, (System.nanoTime() - start_nanos) / 1_000_000_000.0, outcome, retry_after_seconds)
 			}

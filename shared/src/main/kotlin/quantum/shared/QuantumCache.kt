@@ -1,10 +1,9 @@
 package quantum.shared
 
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.security.MessageDigest
 
 object QuantumCache {
 	fun clear() {
@@ -39,8 +38,10 @@ object QuantumCache {
 		AtomicFiles.writeBytes(cacheFile(file_name), bytes)
 	}
 
-	fun textOrFetch(file_name: String, url: String): String {
+	fun fetchText(url: String): String {
+		val file_name = "text_${cacheKey(url)}"
 		val cached_text = readText(file_name)
+
 		if(cached_text != null) {
 			return cached_text
 		}
@@ -48,6 +49,32 @@ object QuantumCache {
 		val fetched_text = QuantumHttp.fetchText(url)
 		writeText(file_name, fetched_text)
 		return fetched_text
+	}
+
+	fun fetchBytes(url: String): ByteArray {
+		val file_name = "bytes_${cacheKey(url)}"
+		val cached_bytes = readBytes(file_name)
+
+		if(cached_bytes != null) {
+			return cached_bytes
+		}
+
+		val fetched_bytes = QuantumHttp.fetchBytes(url).body
+		writeBytes(file_name, fetched_bytes)
+		return fetched_bytes
+	}
+
+	fun bytesOrLoad(source: String, load: () -> ByteArray?): ByteArray? {
+		val file_name = "entry_${cacheKey(source)}"
+		val cached_bytes = readBytes(file_name)
+
+		if(cached_bytes != null) {
+			return cached_bytes
+		}
+
+		val loaded_bytes = load() ?: return null
+		writeBytes(file_name, loaded_bytes)
+		return loaded_bytes
 	}
 
 	@Synchronized
@@ -65,8 +92,9 @@ object QuantumCache {
 		return Files.readAllLines(cache_file).filter { line -> line.isNotBlank() }
 	}
 
-	fun safeName(text: String): String {
-		return URLEncoder.encode(text, StandardCharsets.UTF_8)
+	private fun cacheKey(text: String): String {
+		val digest = MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
+		return digest.joinToString("") { byte -> "%02x".format(byte) }
 	}
 
 	private fun cacheFile(file_name: String): Path {

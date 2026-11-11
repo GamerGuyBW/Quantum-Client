@@ -68,7 +68,7 @@ object AddonVersionStore {
 	}
 
 	private fun liteLoaderGameVersions(): JsonObject {
-		val versions_text = QuantumCache.textOrFetch("liteloader_versions.json", liteloader_versions_url)
+		val versions_text = QuantumCache.fetchText(liteloader_versions_url)
 		return QuantumJson.json.parseToJsonElement(versions_text).jsonObject["versions"]?.jsonObject ?: JsonObject(emptyMap())
 	}
 
