@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import quantum.shared.Edition
@@ -30,7 +31,9 @@ import quantum.shared.Loader
 import quantum.shared.LoaderVersion
 import quantum.shared.LoaderVersionStore
 import quantum.shared.NameRules
+import quantum.shared.SetupTaskState
 import quantum.shared.VersionManifest
+import quantum.shared.VersionSetup
 import quantum.shared.VersionStore
 import quantum.shared.VersionType
 
@@ -55,7 +58,7 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 
 	var supported_game_versions by remember { mutableStateOf<Set<String>?>(null) }
 	var supported_ready_for by remember { mutableStateOf<Loader?>(null) }
-	var supported_missing by remember { mutableStateOf(false) }
+	var supported_failed by remember { mutableStateOf(false) }
 	var supported_reload_count by remember { mutableIntStateOf(0) }
 
 	var loader_versions by remember { mutableStateOf<List<LoaderVersion>?>(null) }
@@ -103,19 +106,27 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	LaunchedEffect(edition, selected_loader, supported_reload_count) {
 		supported_game_versions = null
 		supported_ready_for = null
-		supported_missing = false
+		supported_failed = false
 
 		if(edition == Edition.JAVA) {
 			if(!LoaderVersionStore.hasVersionList(selected_loader)) {
 				supported_ready_for = selected_loader
 			} else {
-				val loaded_versions = withContext(Dispatchers.IO) { LoaderVersionStore.loadSupportedGameVersions(selected_loader) }
+				while(supported_ready_for != selected_loader) {
+					val loader_state = VersionSetup.loaderState(selected_loader)
+					val loaded_versions = if(loader_state == SetupTaskState.DONE) {
+						withContext(Dispatchers.IO) { LoaderVersionStore.loadSupportedGameVersions(selected_loader) }
+					} else {
+						null
+					}
 
-				if(loaded_versions != null) {
-					supported_game_versions = loaded_versions
-					supported_ready_for = selected_loader
-				} else {
-					supported_missing = true
+					if(loaded_versions != null) {
+						supported_game_versions = loaded_versions
+						supported_ready_for = selected_loader
+					} else {
+						supported_failed = loader_state == SetupTaskState.FAILED || loader_state == SetupTaskState.DONE
+						delay(250)
+					}
 				}
 			}
 		}
@@ -217,8 +228,13 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 							BasicText(text = "Could not load the version list. Check your internet connection.", style = QuantumTextStyles.error)
 							QuantumButton(text = "Retry", style = ButtonStyle.SECONDARY, onClick = { retry_count += 1 })
 						}
-					} else if(supported_missing) {
-						BasicText(text = "The $loader_name version list is missing. Restart Quantum Client to rebuild it.", style = QuantumTextStyles.error)
+					} else if(supported_failed) {
+						Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+							BasicText(text = "Could not load the $loader_name version list. Check your internet connection.", style = QuantumTextStyles.error)
+							QuantumButton(text = "Retry", style = ButtonStyle.SECONDARY, onClick = { VersionSetup.retry(selected_loader) })
+						}
+					} else if(LoaderVersionStore.hasVersionList(selected_loader)) {
+						BasicText(text = "Loading the $loader_name version list…", style = QuantumTextStyles.body)
 					} else {
 						BasicText(text = "Loading the version list…", style = QuantumTextStyles.body)
 					}

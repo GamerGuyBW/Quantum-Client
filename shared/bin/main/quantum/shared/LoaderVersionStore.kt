@@ -3,6 +3,8 @@ package quantum.shared
 import java.io.StringReader
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
@@ -19,24 +21,20 @@ object LoaderVersionStore {
 	private const val forge_maven_url = "https://maven.minecraftforge.net/releases/net/minecraftforge/forge/"
 	private const val forge_mapping_url = "https://files.minecraftforge.net/net/minecraftforge/forge/maven-metadata.json"
 	private const val forge_promotions_url = "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json"
+	private const val installer_read_threads = 16
 
 	fun hasVersionList(loader: Loader): Boolean {
 		return loader == Loader.FABRIC || loader == Loader.QUILT || loader == Loader.FORGE || loader == Loader.NEOFORGE
 	}
 
-	fun usesInstallerChecks(loader: Loader): Boolean {
-		return loader == Loader.NEOFORGE
-	}
-
-	fun downloadSupportedGameVersions(loader: Loader) {
-		val supported_versions = when(loader) {
-			Loader.FABRIC -> fetchGameVersionList(fabric_game_url)
-			Loader.QUILT -> fetchGameVersionList(quilt_game_url)
-			Loader.FORGE -> forgeVersionMapping().keys
-			else -> throw IllegalArgumentException("`${loader.display_name}` does not publish a supported version list.")
+	fun prepareLoader(loader: Loader) {
+		when(loader) {
+			Loader.FABRIC -> saveSupportedGameVersions(loader, fetchGameVersionList(fabric_game_url))
+			Loader.QUILT -> saveSupportedGameVersions(loader, fetchGameVersionList(quilt_game_url))
+			Loader.FORGE -> saveResolvedVersions(loader, resolveForgeVersions())
+			Loader.NEOFORGE -> saveResolvedVersions(loader, resolveNeoForgeVersions())
+			else -> throw IllegalArgumentException("`${loader.display_name}` does not have a version list.")
 		}
-
-		saveSupportedGameVersions(loader, supported_versions)
 	}
 
 	fun loadSupportedGameVersions(loader: Loader): Set<String>? {
@@ -48,23 +46,17 @@ object LoaderVersionStore {
 		return when(loader) {
 			Loader.FABRIC -> fetchFabricVersions(game_version_id)
 			Loader.QUILT -> fetchQuiltVersions(game_version_id)
-			Loader.FORGE -> fetchForgeVersions(game_version_id)
-			Loader.NEOFORGE -> fetchNeoForgeVersions(game_version_id)
+			Loader.FORGE, Loader.NEOFORGE -> fetchResolvedVersions(loader, game_version_id)
 			else -> emptyList()
 		}
 	}
 
 	fun verifyGameVersion(loader: Loader, loader_version: LoaderVersion, expected_game_version: String): String? {
 		val installer_url = loader_version.installer_url ?: return null
-		val actual_game_version = InstallerInfo.minecraftVersion(installer_url) ?: publishedGameVersion(loader, loader_version.version)
+		val actual_game_version = InstallerInfo.minecraftVersion(installer_url) ?: forgeMappedGameVersion(loader, loader_version.version)
 
 		if(actual_game_version == expected_game_version) {
 			return null
-		}
-
-		if(usesInstallerChecks(loader)) {
-			VersionDatabase.correct(loader, loader_version.version, actual_game_version)
-			writeSupportedFromDatabase(loader)
 		}
 
 		return if(actual_game_version == null) {
@@ -74,29 +66,86 @@ object LoaderVersionStore {
 		}
 	}
 
-	internal fun mavenArtifacts(loader: Loader): List<MavenArtifact> {
-		val cached_text = QuantumCache.readText(artifactsFileName(loader))
-		if(cached_text != null) {
-			return QuantumJson.json.decodeFromString(ListSerializer(MavenArtifact.serializer()), cached_text)
-		}
+	private fun resolveNeoForgeVersions(): List<ResolvedLoaderVersion> {
+		val mojang_versions = mojangVersionIds()
+		val artifacts = mavenArtifactList(legacy_neoforge_maven_url, "forge") + mavenArtifactList(neoforge_maven_url, "neoforge")
+		val rule_versions = artifacts.associate { artifact -> artifact.version to NeoForgeVersions.gameVersion(artifact.version) }
 
-		val artifacts = when(loader) {
-			Loader.NEOFORGE -> mavenArtifactList(legacy_neoforge_maven_url, "forge") + mavenArtifactList(neoforge_maven_url, "neoforge")
-			else -> emptyList()
-		}
+		val unplaced_artifacts = artifacts.filter { artifact -> rule_versions[artifact.version] !in mojang_versions }
+		val installer_versions = readInParallel(unplaced_artifacts) { artifact ->
+			artifact.version to InstallerInfo.minecraftVersion(artifact.installer_url)
+		}.toMap()
 
-		QuantumCache.writeText(artifactsFileName(loader), QuantumJson.json.encodeToString(ListSerializer(MavenArtifact.serializer()), artifacts))
-		return artifacts
+		return artifacts.map { artifact ->
+			val game_version = if(artifact.version in installer_versions) installer_versions[artifact.version] else rule_versions[artifact.version]
+			ResolvedLoaderVersion(artifact.version, game_version, artifact.installer_url)
+		}
 	}
 
-	internal fun checkInstaller(loader: Loader, artifact: MavenArtifact) {
-		val minecraft_version = InstallerInfo.minecraftVersion(artifact.installer_url)
-		VersionDatabase.record(loader, artifact.version, minecraft_version)
+	private fun resolveForgeVersions(): List<ResolvedLoaderVersion> {
+		val mojang_versions = mojangVersionIds()
+		val mapped_versions = forgeVersionMapping().flatMap { (game_version, forge_versions) ->
+			forge_versions.map { forge_version -> forge_version to game_version }
+		}
+
+		val unplaced_versions = mapped_versions.filter { (_, game_version) -> game_version !in mojang_versions }
+		val installer_versions = readInParallel(unplaced_versions) { (forge_version, _) ->
+			forge_version to InstallerInfo.minecraftVersion(forgeInstallerUrl(forge_version))
+		}.toMap()
+
+		return mapped_versions.map { (forge_version, mapped_game_version) ->
+			val game_version = installer_versions[forge_version] ?: mapped_game_version
+			ResolvedLoaderVersion(forge_version, game_version, forgeInstallerUrl(forge_version))
+		}
 	}
 
-	internal fun writeSupportedFromDatabase(loader: Loader) {
-		val supported_versions = VersionDatabase.load(loader).values.filterNotNull().toSet()
-		saveSupportedGameVersions(loader, supported_versions)
+	private fun <T, R> readInParallel(items: List<T>, read: (T) -> R): List<R> {
+		if(items.isEmpty()) {
+			return emptyList()
+		}
+
+		val executor = Executors.newFixedThreadPool(minOf(items.size, installer_read_threads))
+
+		try {
+			val tasks = items.map { item -> Callable { read(item) } }
+			return executor.invokeAll(tasks).map { future -> future.get() }
+		} finally {
+			executor.shutdownNow()
+		}
+	}
+
+	private fun saveResolvedVersions(loader: Loader, resolved_versions: List<ResolvedLoaderVersion>) {
+		val resolved_text = QuantumJson.json.encodeToString(ListSerializer(ResolvedLoaderVersion.serializer()), resolved_versions)
+		QuantumCache.writeText(resolvedFileName(loader), resolved_text)
+		saveSupportedGameVersions(loader, resolved_versions.mapNotNull { resolved_version -> resolved_version.game_version }.toSet())
+	}
+
+	private fun loadResolvedVersions(loader: Loader): List<ResolvedLoaderVersion> {
+		val resolved_text = QuantumCache.readText(resolvedFileName(loader)) ?: return emptyList()
+		return QuantumJson.json.decodeFromString(ListSerializer(ResolvedLoaderVersion.serializer()), resolved_text)
+	}
+
+	private fun fetchResolvedVersions(loader: Loader, game_version_id: String): List<LoaderVersion> {
+		val recommended_version = if(loader == Loader.FORGE) forgeRecommendedVersion(game_version_id) else null
+
+		return loadResolvedVersions(loader)
+			.filter { resolved_version -> resolved_version.game_version == game_version_id }
+			.asReversed()
+			.map { resolved_version ->
+				val display_name = resolved_version.version.removePrefix("$game_version_id-")
+
+				LoaderVersion(
+					version = resolved_version.version,
+					display_name = display_name,
+					is_stable = loader == Loader.FORGE || !SemanticVersions.isPreRelease(display_name),
+					installer_url = resolved_version.installer_url,
+					is_recommended = display_name == recommended_version
+				)
+			}
+	}
+
+	private fun mojangVersionIds(): Set<String> {
+		return VersionStore.fetchManifest().versions.map { version -> version.id }.toSet()
 	}
 
 	private fun fetchGameVersionList(url: String): Set<String> {
@@ -110,12 +159,12 @@ object LoaderVersionStore {
 		return QuantumJson.json.decodeFromString(MapSerializer(String.serializer(), ListSerializer(String.serializer())), mapping_text)
 	}
 
-	private fun publishedGameVersion(loader: Loader, loader_version: String): String? {
+	private fun forgeMappedGameVersion(loader: Loader, forge_version: String): String? {
 		if(loader != Loader.FORGE) {
 			return null
 		}
 
-		return forgeVersionMapping().entries.firstOrNull { (_, forge_versions) -> loader_version in forge_versions }?.key
+		return forgeVersionMapping().entries.firstOrNull { (_, forge_versions) -> forge_version in forge_versions }?.key
 	}
 
 	private fun forgeRecommendedVersion(game_version_id: String): String? {
@@ -123,6 +172,10 @@ object LoaderVersionStore {
 		val promotions = QuantumJson.json.decodeFromString(ForgePromotions.serializer(), promotions_text)
 
 		return promotions.promos["$game_version_id-recommended"]
+	}
+
+	private fun forgeInstallerUrl(forge_version: String): String {
+		return "$forge_maven_url$forge_version/forge-$forge_version-installer.jar"
 	}
 
 	private fun saveSupportedGameVersions(loader: Loader, supported_versions: Set<String>) {
@@ -148,35 +201,6 @@ object LoaderVersionStore {
 		}
 	}
 
-	private fun fetchForgeVersions(game_version_id: String): List<LoaderVersion> {
-		val forge_versions = forgeVersionMapping()[game_version_id].orEmpty()
-		val recommended_version = forgeRecommendedVersion(game_version_id)
-
-		return forge_versions.asReversed().map { forge_version ->
-			val display_name = forge_version.removePrefix("$game_version_id-")
-
-			LoaderVersion(
-				version = forge_version,
-				display_name = display_name,
-				is_stable = true,
-				installer_url = "$forge_maven_url$forge_version/forge-$forge_version-installer.jar",
-				is_recommended = display_name == recommended_version
-			)
-		}
-	}
-
-	private fun fetchNeoForgeVersions(game_version_id: String): List<LoaderVersion> {
-		val database_results = VersionDatabase.load(Loader.NEOFORGE)
-
-		return mavenArtifacts(Loader.NEOFORGE)
-			.asReversed()
-			.filter { artifact -> database_results[artifact.version] == game_version_id }
-			.map { artifact ->
-				val display_name = artifact.version.removePrefix("$game_version_id-")
-				LoaderVersion(artifact.version, display_name, !SemanticVersions.isPreRelease(display_name), artifact.installer_url)
-			}
-	}
-
 	private fun mavenArtifactList(base_url: String, artifact_name: String): List<MavenArtifact> {
 		val metadata_text = QuantumHttp.fetchText(base_url + "maven-metadata.xml")
 
@@ -199,8 +223,8 @@ object LoaderVersionStore {
 		return "supported_game_versions_${loader.name.lowercase()}.json"
 	}
 
-	private fun artifactsFileName(loader: Loader): String {
-		return "maven_artifacts_${loader.name.lowercase()}.json"
+	private fun resolvedFileName(loader: Loader): String {
+		return "resolved_versions_${loader.name.lowercase()}.json"
 	}
 
 	private fun encodeForPath(game_version_id: String): String {

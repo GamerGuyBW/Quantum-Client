@@ -14,6 +14,7 @@ class HttpBytes(val status_code: Int, val body: ByteArray, val total_size: Long?
 object QuantumHttp {
 	private const val max_attempts = 5
 	private const val default_retry_after_seconds = 5L
+	private const val retry_delay_millis = 1000L
 
 	private val http_client: HttpClient = HttpClient.newBuilder()
 		.connectTimeout(Duration.ofSeconds(10))
@@ -60,8 +61,9 @@ object QuantumHttp {
 
 	private fun <T> send(request: HttpRequest, body_handler: HttpResponse.BodyHandler<T>): HttpResponse<T> {
 		val host = request.uri().host
+		var last_error: IOException? = null
 
-		repeat(max_attempts) {
+		repeat(max_attempts) { attempt_index ->
 			HostLimiter.acquire(host)
 
 			val start_nanos = System.nanoTime()
@@ -80,11 +82,17 @@ object QuantumHttp {
 					outcome = if(status_code in 200..299) RequestOutcome.NORMAL else RequestOutcome.NOT_TIMED
 					return response
 				}
+			} catch(error: IOException) {
+				last_error = error
 			} finally {
 				HostLimiter.release(host, (System.nanoTime() - start_nanos) / 1_000_000_000.0, outcome, retry_after_seconds)
 			}
+
+			if(outcome == RequestOutcome.FAILED) {
+				Thread.sleep(retry_delay_millis * (attempt_index + 1))
+			}
 		}
 
-		throw HttpStatusException(429, request.uri().toString())
+		throw last_error ?: HttpStatusException(429, request.uri().toString())
 	}
 }

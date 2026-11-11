@@ -1,10 +1,6 @@
 package quantum.client
 
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -12,7 +8,6 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import java.awt.Dimension
 import quantum.client.ui.MainWindow
-import quantum.client.ui.SetupScreen
 import quantum.shared.QuantumCache
 import quantum.shared.QuantumInfo
 import quantum.shared.QuantumPaths
@@ -35,18 +30,13 @@ fun main() {
 
 	application {
 		val window_state = rememberWindowState(size = DpSize(1280.dp, 720.dp))
-		var is_setup_complete by remember { mutableStateOf(false) }
 
 		Window(onCloseRequest = ::exitApplication, title = QuantumInfo.app_name, state = window_state) {
 			LaunchedEffect(Unit) {
 				window.minimumSize = Dimension(960, 600)
 			}
 
-			if(is_setup_complete) {
-				MainWindow()
-			} else {
-				SetupScreen(onComplete = { is_setup_complete = true })
-			}
+			MainWindow()
 		}
 	}
 }

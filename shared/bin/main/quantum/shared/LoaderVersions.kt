@@ -17,9 +17,10 @@ internal data class MavenArtifact(
 )
 
 @Serializable
-internal data class InstallerResult(
+internal data class ResolvedLoaderVersion(
 	val version: String,
-	val minecraft_version: String?
+	val game_version: String?,
+	val installer_url: String
 )
 
 @Serializable
