@@ -325,7 +325,7 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 
 							val loader_being_checked = selected_loader
 
-							if(chosen_loader_version?.installer_url != null && checked_game_version != null) {
+							if(chosen_loader_version != null && chosen_loader_version.is_verifiable && checked_game_version != null) {
 								is_verifying = true
 
 								coroutine_scope.launch {

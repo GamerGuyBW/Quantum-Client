@@ -7,8 +7,12 @@ data class LoaderVersion(
 	val display_name: String,
 	val is_stable: Boolean,
 	val installer_url: String? = null,
-	val is_recommended: Boolean = false
-)
+	val is_recommended: Boolean = false,
+	val profile_url: String? = null
+) {
+	val is_verifiable: Boolean
+		get() = installer_url != null || profile_url != null
+}
 
 @Serializable
 internal data class MavenArtifact(

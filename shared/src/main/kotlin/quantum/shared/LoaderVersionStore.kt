@@ -9,13 +9,15 @@ import javax.xml.parsers.DocumentBuilderFactory
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.xml.sax.InputSource
 
 object LoaderVersionStore {
-	private const val fabric_loader_url = "https://meta.fabricmc.net/v2/versions/loader/"
-	private const val fabric_game_url = "https://meta.fabricmc.net/v2/versions/game"
-	private const val quilt_loader_url = "https://meta.quiltmc.org/v3/versions/loader/"
-	private const val quilt_game_url = "https://meta.quiltmc.org/v3/versions/game"
+	private const val fabric_meta_url = "https://meta.fabricmc.net/v2/versions/"
+	private const val legacy_fabric_meta_url = "https://meta.legacyfabric.net/v2/versions/"
+	private const val quilt_meta_url = "https://meta.quiltmc.org/v3/versions/"
 	private const val neoforge_maven_url = "https://maven.neoforged.net/releases/net/neoforged/neoforge/"
 	private const val legacy_neoforge_maven_url = "https://maven.neoforged.net/releases/net/neoforged/forge/"
 	private const val forge_maven_url = "https://maven.minecraftforge.net/releases/net/minecraftforge/forge/"
@@ -24,16 +26,17 @@ object LoaderVersionStore {
 	private const val installer_read_threads = 16
 
 	fun hasVersionList(loader: Loader): Boolean {
-		return loader == Loader.FABRIC || loader == Loader.QUILT || loader == Loader.FORGE || loader == Loader.NEOFORGE
+		return loader != Loader.VANILLA
 	}
 
 	fun prepareLoader(loader: Loader) {
 		when(loader) {
-			Loader.FABRIC -> saveSupportedGameVersions(loader, fetchGameVersionList(fabric_game_url))
-			Loader.QUILT -> saveSupportedGameVersions(loader, fetchGameVersionList(quilt_game_url))
+			Loader.FABRIC -> saveSupportedGameVersions(loader, fetchGameVersionList(fabric_meta_url))
+			Loader.LEGACY_FABRIC -> saveSupportedGameVersions(loader, fetchGameVersionList(legacy_fabric_meta_url))
+			Loader.QUILT -> saveSupportedGameVersions(loader, fetchGameVersionList(quilt_meta_url))
 			Loader.FORGE -> saveResolvedVersions(loader, resolveForgeVersions())
 			Loader.NEOFORGE -> saveResolvedVersions(loader, resolveNeoForgeVersions())
-			else -> throw IllegalArgumentException("`${loader.display_name}` does not have a version list.")
+			Loader.VANILLA -> throw IllegalArgumentException("`${loader.display_name}` does not have a version list.")
 		}
 	}
 
@@ -44,16 +47,22 @@ object LoaderVersionStore {
 
 	fun fetchVersions(loader: Loader, game_version_id: String): List<LoaderVersion> {
 		return when(loader) {
-			Loader.FABRIC -> fetchFabricVersions(game_version_id)
+			Loader.FABRIC -> fetchFabricStyleVersions(loader, fabric_meta_url, game_version_id)
+			Loader.LEGACY_FABRIC -> fetchFabricStyleVersions(loader, legacy_fabric_meta_url, game_version_id)
 			Loader.QUILT -> fetchQuiltVersions(game_version_id)
 			Loader.FORGE, Loader.NEOFORGE -> fetchResolvedVersions(loader, game_version_id)
-			else -> emptyList()
+			Loader.VANILLA -> emptyList()
 		}
 	}
 
 	fun verifyGameVersion(loader: Loader, loader_version: LoaderVersion, expected_game_version: String): String? {
-		val installer_url = loader_version.installer_url ?: return null
-		val actual_game_version = InstallerInfo.minecraftVersion(installer_url) ?: forgeMappedGameVersion(loader, loader_version.version)
+		val actual_game_version = if(loader_version.profile_url != null) {
+			profileGameVersion(loader_version.profile_url)
+		} else if(loader_version.installer_url != null) {
+			InstallerInfo.minecraftVersion(loader_version.installer_url) ?: forgeMappedGameVersion(loader, loader_version.version)
+		} else {
+			return null
+		}
 
 		if(actual_game_version == expected_game_version) {
 			return null
@@ -64,6 +73,19 @@ object LoaderVersionStore {
 		} else {
 			"${loader.display_name} `${loader_version.display_name}` is for Minecraft `$actual_game_version`, not `$expected_game_version`. Choose a different version."
 		}
+	}
+
+	private fun profileGameVersion(profile_url: String): String? {
+		val profile_text = try {
+			QuantumHttp.fetchText(profile_url)
+		} catch(error: HttpStatusException) {
+			if(error.status_code == 400 || error.status_code == 404) {
+				return null
+			}
+			throw error
+		}
+
+		return QuantumJson.json.parseToJsonElement(profile_text).jsonObject["inheritsFrom"]?.jsonPrimitive?.contentOrNull
 	}
 
 	private fun resolveNeoForgeVersions(): List<ResolvedLoaderVersion> {
@@ -148,8 +170,8 @@ object LoaderVersionStore {
 		return VersionStore.fetchManifest().versions.map { version -> version.id }.toSet()
 	}
 
-	private fun fetchGameVersionList(url: String): Set<String> {
-		val file_text = QuantumHttp.fetchText(url)
+	private fun fetchGameVersionList(meta_url: String): Set<String> {
+		val file_text = QuantumHttp.fetchText(meta_url + "game")
 		val entries = QuantumJson.json.decodeFromString(ListSerializer(LoaderGameVersion.serializer()), file_text)
 		return entries.map { entry -> entry.version }.toSet()
 	}
@@ -183,21 +205,39 @@ object LoaderVersionStore {
 		QuantumCache.writeText(supportedFileName(loader), file_text)
 	}
 
-	private fun fetchFabricVersions(game_version_id: String): List<LoaderVersion> {
-		val cache_name = "loader_versions_fabric_${QuantumCache.safeName(game_version_id)}.json"
-		val file_text = QuantumCache.textOrFetch(cache_name, fabric_loader_url + encodeForPath(game_version_id))
+	private fun fetchFabricStyleVersions(loader: Loader, meta_url: String, game_version_id: String): List<LoaderVersion> {
+		val encoded_game_version = encodeForPath(game_version_id)
+		val cache_name = "loader_versions_${loader.name.lowercase()}_${QuantumCache.safeName(game_version_id)}.json"
+		val file_text = QuantumCache.textOrFetch(cache_name, "${meta_url}loader/$encoded_game_version")
 		val entries = QuantumJson.json.decodeFromString(ListSerializer(FabricLoaderEntry.serializer()), file_text)
 
-		return entries.map { entry -> LoaderVersion(entry.loader.version, entry.loader.version, entry.loader.stable) }
+		return entries.map { entry ->
+			val loader_version = entry.loader.version
+
+			LoaderVersion(
+				version = loader_version,
+				display_name = loader_version,
+				is_stable = entry.loader.stable,
+				profile_url = "${meta_url}loader/$encoded_game_version/${encodeForPath(loader_version)}/profile/json"
+			)
+		}
 	}
 
 	private fun fetchQuiltVersions(game_version_id: String): List<LoaderVersion> {
+		val encoded_game_version = encodeForPath(game_version_id)
 		val cache_name = "loader_versions_quilt_${QuantumCache.safeName(game_version_id)}.json"
-		val file_text = QuantumCache.textOrFetch(cache_name, quilt_loader_url + encodeForPath(game_version_id))
+		val file_text = QuantumCache.textOrFetch(cache_name, "${quilt_meta_url}loader/$encoded_game_version")
 		val entries = QuantumJson.json.decodeFromString(ListSerializer(QuiltLoaderEntry.serializer()), file_text)
 
 		return entries.map { entry ->
-			LoaderVersion(entry.loader.version, entry.loader.version, !SemanticVersions.isPreRelease(entry.loader.version))
+			val loader_version = entry.loader.version
+
+			LoaderVersion(
+				version = loader_version,
+				display_name = loader_version,
+				is_stable = !SemanticVersions.isPreRelease(loader_version),
+				profile_url = "${quilt_meta_url}loader/$encoded_game_version/${encodeForPath(loader_version)}/profile/json"
+			)
 		}
 	}
 
@@ -227,7 +267,7 @@ object LoaderVersionStore {
 		return "resolved_versions_${loader.name.lowercase()}.json"
 	}
 
-	private fun encodeForPath(game_version_id: String): String {
-		return URLEncoder.encode(game_version_id, StandardCharsets.UTF_8).replace("+", "%20")
+	private fun encodeForPath(text: String): String {
+		return URLEncoder.encode(text, StandardCharsets.UTF_8).replace("+", "%20")
 	}
 }
