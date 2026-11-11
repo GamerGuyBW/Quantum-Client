@@ -1,28 +1,70 @@
 package quantum.shared
 
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 
 object AddonVersionStore {
 	private const val liteloader_versions_url = "https://dl.liteloader.com/versions/versions.json"
+	private const val launchwrapper_main_class = "net.minecraft.launchwrapper.Launch"
 
 	fun prepareAddon(addon: Addon) {
-		when(addon) {
-			Addon.LITELOADER -> saveSupportedGameVersions(addon, liteLoaderGameVersions().keys)
+		val support = when(addon) {
+			Addon.LITELOADER -> liteLoaderSupport()
 		}
+
+		saveSupport(addon, support)
 	}
 
-	fun loadSupportedGameVersions(addon: Addon): Set<String>? {
-		val file_text = QuantumCache.readText(supportedFileName(addon)) ?: return null
-		return QuantumJson.json.decodeFromString(ListSerializer(String.serializer()), file_text).toSet()
+	fun loadSupport(addon: Addon): Map<Loader, List<String>>? {
+		val file_text = QuantumCache.readText(supportFileName(addon)) ?: return null
+		val support = QuantumJson.json.decodeFromString(ListSerializer(AddonSupport.serializer()), file_text)
+
+		return support.associate { loader_support -> loader_support.loader to loader_support.game_versions }
 	}
 
 	fun fetchVersions(addon: Addon, game_version_id: String): List<LoaderVersion> {
 		return when(addon) {
 			Addon.LITELOADER -> fetchLiteLoaderVersions(game_version_id)
 		}
+	}
+
+	fun needsBaseCheck(addon: Addon, loader: Loader): Boolean {
+		return when(addon) {
+			Addon.LITELOADER -> loader == Loader.FORGE
+		}
+	}
+
+	fun verifyBase(addon: Addon, loader: Loader, loader_version: LoaderVersion?): String? {
+		if(!needsBaseCheck(addon, loader) || loader_version == null) {
+			return null
+		}
+
+		val installer_url = loader_version.installer_url ?: return null
+		val main_class = InstallerInfo.launchMainClass(installer_url)
+
+		if(main_class == launchwrapper_main_class) {
+			return null
+		}
+
+		return "${addon.display_name} cannot run on ${loader.full_name} `${loader_version.display_name}`. Choose a different ${loader.full_name} version, or untick ${addon.display_name}."
+	}
+
+	private fun liteLoaderSupport(): Map<Loader, List<String>> {
+		val game_versions = liteLoaderGameVersions().keys.toList()
+		val forge_mapping = LoaderVersionStore.forgeVersionMapping()
+
+		val forge_game_versions = LoaderVersionStore.readInParallel(game_versions) { game_version ->
+			val newest_forge_version = forge_mapping[game_version]?.lastOrNull()
+			val main_class = newest_forge_version?.let { forge_version -> InstallerInfo.launchMainClass(LoaderVersionStore.forgeInstallerUrl(forge_version)) }
+
+			if(main_class == launchwrapper_main_class) game_version else null
+		}.filterNotNull()
+
+		return mapOf(
+			Loader.VANILLA to game_versions,
+			Loader.FORGE to forge_game_versions
+		)
 	}
 
 	private fun liteLoaderGameVersions(): JsonObject {
@@ -60,12 +102,24 @@ object AddonVersionStore {
 			}
 	}
 
-	private fun saveSupportedGameVersions(addon: Addon, supported_versions: Set<String>) {
-		val file_text = QuantumJson.json.encodeToString(ListSerializer(String.serializer()), supported_versions.toList())
-		QuantumCache.writeText(supportedFileName(addon), file_text)
+	private fun saveSupport(addon: Addon, support: Map<Loader, List<String>>) {
+		val release_order = VersionStore.fetchManifest().versions
+			.sortedByDescending { version -> version.release_time }
+			.mapIndexed { index, version -> version.id to index }
+			.toMap()
+
+		val support_entries = Loader.entries
+			.filter { loader -> loader in support }
+			.map { loader ->
+				val sorted_versions = support.getValue(loader).sortedBy { game_version -> release_order[game_version] ?: Int.MAX_VALUE }
+				AddonSupport(loader, sorted_versions)
+			}
+
+		val file_text = QuantumJson.json.encodeToString(ListSerializer(AddonSupport.serializer()), support_entries)
+		QuantumCache.writeText(supportFileName(addon), file_text)
 	}
 
-	private fun supportedFileName(addon: Addon): String {
-		return "supported_game_versions_addon_${addon.name.lowercase()}.json"
+	private fun supportFileName(addon: Addon): String {
+		return "addon_support_${addon.name.lowercase()}.json"
 	}
 }

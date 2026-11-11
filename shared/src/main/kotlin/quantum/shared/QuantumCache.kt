@@ -30,6 +30,15 @@ object QuantumCache {
 		AtomicFiles.writeText(cacheFile(file_name), text)
 	}
 
+	fun readBytes(file_name: String): ByteArray? {
+		val cache_file = cacheFile(file_name)
+		return if(Files.exists(cache_file)) Files.readAllBytes(cache_file) else null
+	}
+
+	fun writeBytes(file_name: String, bytes: ByteArray) {
+		AtomicFiles.writeBytes(cacheFile(file_name), bytes)
+	}
+
 	fun textOrFetch(file_name: String, url: String): String {
 		val cached_text = readText(file_name)
 		if(cached_text != null) {

@@ -18,63 +18,48 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import quantum.shared.Addon
 import quantum.shared.AddonVersionStore
 import quantum.shared.Loader
 import quantum.shared.LoaderVersion
-import quantum.shared.SetupTaskState
-import quantum.shared.VersionSetup
+import quantum.shared.VersionManifest
+import quantum.shared.VersionRanges
 
 @Composable
 fun AddonRow(
 	addon: Addon,
+	manifest: VersionManifest,
+	addon_support: Map<Loader, List<String>>?,
+	is_support_failed: Boolean,
 	selected_loader: Loader,
 	game_version_id: String,
 	is_checked: Boolean,
 	onCheckedChange: (Boolean) -> Unit,
-	onVersionChange: (LoaderVersion?, Boolean) -> Unit
+	onVersionChange: (LoaderVersion?, Boolean) -> Unit,
+	onRetrySupport: () -> Unit
 ) {
 	val latest_on_checked_change by rememberUpdatedState(onCheckedChange)
 	val latest_on_version_change by rememberUpdatedState(onVersionChange)
 	val addon_name = addon.display_name
-
-	var supported_game_versions by remember(addon) { mutableStateOf<Set<String>?>(null) }
-	var supported_failed by remember(addon) { mutableStateOf(false) }
 
 	var addon_versions by remember { mutableStateOf<List<LoaderVersion>?>(null) }
 	var versions_failed by remember { mutableStateOf(false) }
 	var versions_retry_count by remember { mutableIntStateOf(0) }
 	var selected_version by remember { mutableStateOf<String?>(null) }
 
-	val loaded_supported = supported_game_versions
-	val supports_loader = selected_loader in addon.base_loaders
-	val is_available = supports_loader && loaded_supported != null && game_version_id in loaded_supported
+	val loader_game_versions = addon_support?.get(selected_loader)
+	val supported_loaders = addon_support?.filterValues { game_versions -> game_versions.isNotEmpty() }?.keys.orEmpty()
+	val supports_loader = selected_loader in supported_loaders
+	val is_available = loader_game_versions != null && game_version_id in loader_game_versions
 	val loaded_versions = addon_versions
 	val version_options = remember(loaded_versions) { loaderVersionOptions(loaded_versions.orEmpty()) }
-
-	LaunchedEffect(addon) {
-		while(supported_game_versions == null) {
-			val addon_state = VersionSetup.addonState(addon)
-			val loaded_game_versions = if(addon_state == SetupTaskState.DONE) {
-				withContext(Dispatchers.IO) { AddonVersionStore.loadSupportedGameVersions(addon) }
-			} else {
-				null
-			}
-
-			if(loaded_game_versions != null) {
-				supported_game_versions = loaded_game_versions
-				supported_failed = false
-			} else {
-				supported_failed = addon_state == SetupTaskState.FAILED || addon_state == SetupTaskState.DONE
-				delay(250)
-			}
-		}
+	val tooltip_sections = remember(addon_support, manifest) {
+		addon_support?.map { (loader, game_versions) -> SupportSection(loader.full_name, VersionRanges.describe(game_versions, manifest)) }
 	}
 
 	LaunchedEffect(is_available, is_checked) {
-		if(!is_available && is_checked && loaded_supported != null) {
+		if(!is_available && is_checked && addon_support != null) {
 			latest_on_checked_change(false)
 		}
 	}
@@ -103,12 +88,14 @@ fun AddonRow(
 
 	Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
 		Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-			QuantumCheckbox(
-				text = addon_name,
-				is_checked = is_checked,
-				is_enabled = is_available,
-				onCheckedChange = { new_value -> onCheckedChange(new_value) }
-			)
+			SupportTooltip(title = addon_name, sections = tooltip_sections, is_failed = is_support_failed) {
+				QuantumCheckbox(
+					text = addon_name,
+					is_checked = is_checked,
+					is_enabled = is_available,
+					onCheckedChange = { new_value -> onCheckedChange(new_value) }
+				)
+			}
 
 			if(is_checked && is_available) {
 				if(loaded_versions != null && loaded_versions.isNotEmpty()) {
@@ -137,18 +124,20 @@ fun AddonRow(
 		if(!is_available) {
 			val reason_modifier = Modifier.padding(start = 28.dp)
 
-			if(!supports_loader) {
-				val loader_names = addon.base_loaders.joinToString(" or ") { loader -> loader.display_name }
-				BasicText(text = "Needs $loader_names.", style = QuantumTextStyles.label, modifier = reason_modifier)
-			} else if(supported_failed) {
+			if(is_support_failed && addon_support == null) {
 				Row(modifier = reason_modifier, horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
 					BasicText(text = "Could not load the $addon_name version list. Check your internet connection.", style = QuantumTextStyles.error)
-					QuantumButton(text = "Retry", style = ButtonStyle.SECONDARY, onClick = { VersionSetup.retryAddon(addon) })
+					QuantumButton(text = "Retry", style = ButtonStyle.SECONDARY, onClick = onRetrySupport)
 				}
-			} else if(loaded_supported == null) {
+			} else if(addon_support == null) {
 				BasicText(text = "Loading the $addon_name version list…", style = QuantumTextStyles.label, modifier = reason_modifier)
-			} else {
+			} else if(!supports_loader) {
+				val loader_names = supported_loaders.joinToString(" or ") { loader -> loader.full_name }
+				BasicText(text = "Needs $loader_names.", style = QuantumTextStyles.label, modifier = reason_modifier)
+			} else if(selected_loader == Loader.VANILLA) {
 				BasicText(text = "Not available for `$game_version_id`.", style = QuantumTextStyles.label, modifier = reason_modifier)
+			} else {
+				BasicText(text = "Not available for `$game_version_id` with ${selected_loader.full_name}.", style = QuantumTextStyles.label, modifier = reason_modifier)
 			}
 		}
 	}

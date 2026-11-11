@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -59,11 +60,13 @@ fun QuantumButton(text: String, onClick: () -> Unit, style: ButtonStyle = Button
 }
 
 @Composable
-fun QuantumTextField(label: String, value: String, onValueChange: (String) -> Unit) {
+fun QuantumTextField(label: String?, value: String, onValueChange: (String) -> Unit, width: Dp = 320.dp) {
 	val shape = RoundedCornerShape(8.dp)
 
 	Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-		BasicText(text = label, style = QuantumTextStyles.label)
+		if(label != null) {
+			BasicText(text = label, style = QuantumTextStyles.label)
+		}
 
 		BasicTextField(
 			value = value,
@@ -72,7 +75,7 @@ fun QuantumTextField(label: String, value: String, onValueChange: (String) -> Un
 			textStyle = QuantumTextStyles.body,
 			cursorBrush = SolidColor(QuantumColours.turquoise),
 			modifier = Modifier
-				.width(320.dp)
+				.width(width)
 				.clip(shape)
 				.background(QuantumColours.surface)
 				.border(1.dp, QuantumColours.border, shape)
@@ -113,5 +116,26 @@ fun QuantumCheckbox(text: String, is_checked: Boolean, is_enabled: Boolean, onCh
 		}
 
 		BasicText(text = text, style = QuantumTextStyles.body)
+	}
+}
+
+@Composable
+fun QuantumTab(text: String, is_selected: Boolean, onClick: () -> Unit) {
+	val shape = RoundedCornerShape(8.dp)
+	val background_colour = if(is_selected) QuantumColours.surface else Color.Transparent
+	val border_colour = if(is_selected) QuantumColours.blue else QuantumColours.border
+	val text_colour = if(is_selected) QuantumColours.text_primary else QuantumColours.text_secondary
+
+	Box(
+		modifier = Modifier
+			.clip(shape)
+			.background(background_colour)
+			.border(1.dp, border_colour, shape)
+			.clickable(onClick = onClick)
+			.pointerHoverIcon(PointerIcon.Hand)
+			.padding(horizontal = 14.dp, vertical = 7.dp),
+		contentAlignment = Alignment.Center
+	) {
+		BasicText(text = text, style = QuantumTextStyles.label.copy(color = text_colour))
 	}
 }

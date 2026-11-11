@@ -27,8 +27,9 @@ fun InstanceCard(instance: Instance, is_selected: Boolean, onClick: () -> Unit) 
 	val border_colour = if(is_selected) QuantumColours.blue else QuantumColours.border
 	val version_name = GameVersions.displayName(instance.game_version)
 	val shown_loader_version = instance.loader_version_name ?: instance.loader_version
-	val loader_name = if(shown_loader_version != null) "${instance.loader.display_name} $shown_loader_version" else instance.loader.display_name
-	val details = if(instance.edition == Edition.JAVA) "$version_name · $loader_name" else version_name
+	val loader_name = if(shown_loader_version != null) "${instance.loader.full_name} $shown_loader_version" else instance.loader.full_name
+	val generation_text = instance.generation?.let { generation -> " · Gen $generation" } ?: ""
+	val details = if(instance.edition == Edition.JAVA) "$version_name · $loader_name$generation_text" else version_name
 	val addon_details = instance.addons.joinToString(", ") { instance_addon -> "${instance_addon.addon.display_name} ${instance_addon.version_name}" }
 
 	Column(

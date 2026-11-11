@@ -12,6 +12,7 @@ data class Instance(
 	val loader: Loader = Loader.VANILLA,
 	val loader_version: String? = null,
 	val loader_version_name: String? = null,
+	val generation: Int? = null,
 	val group_id: String? = null,
 	val addons: List<InstanceAddon> = emptyList()
 )

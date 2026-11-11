@@ -14,11 +14,11 @@ enum class SetupTaskState {
 
 object VersionSetup {
 	private val tasks: Map<String, () -> Unit> = buildMap {
-		put(Loader.VANILLA.display_name) { VersionStore.fetchManifest() }
+		put(loaderTaskName(Loader.VANILLA)) { VersionStore.fetchManifest() }
 
 		Loader.entries
 			.filter { loader -> LoaderVersionStore.hasVersionList(loader) }
-			.forEach { loader -> put(loader.display_name) { LoaderVersionStore.prepareLoader(loader) } }
+			.forEach { loader -> put(loaderTaskName(loader)) { LoaderVersionStore.prepareLoader(loader) } }
 
 		Addon.entries.forEach { addon -> put(addonTaskName(addon)) { AddonVersionStore.prepareAddon(addon) } }
 	}
@@ -49,7 +49,7 @@ object VersionSetup {
 	}
 
 	fun loaderState(loader: Loader): SetupTaskState {
-		return taskState(loader.display_name)
+		return taskState(loaderTaskName(loader))
 	}
 
 	fun addonState(addon: Addon): SetupTaskState {
@@ -57,15 +57,19 @@ object VersionSetup {
 	}
 
 	fun retry(loader: Loader) {
-		retryTask(loader.display_name)
+		retryTask(loaderTaskName(loader))
 	}
 
 	fun retryAddon(addon: Addon) {
 		retryTask(addonTaskName(addon))
 	}
 
+	private fun loaderTaskName(loader: Loader): String {
+		return "loader_${loader.name}"
+	}
+
 	private fun addonTaskName(addon: Addon): String {
-		return "${addon.display_name} add-on"
+		return "addon_${addon.name}"
 	}
 
 	private fun taskState(task_name: String): SetupTaskState {

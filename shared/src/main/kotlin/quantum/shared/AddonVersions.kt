@@ -11,3 +11,9 @@ internal data class LiteLoaderBuild(
 	val stream: String,
 	val timestamp: String
 )
+
+@Serializable
+internal data class AddonSupport(
+	val loader: Loader,
+	val game_versions: List<String>
+)
