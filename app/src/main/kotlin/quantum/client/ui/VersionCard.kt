@@ -1,5 +1,7 @@
 package quantum.client.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -19,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
@@ -38,6 +41,7 @@ import org.jetbrains.skia.Surface
 import quantum.shared.VersionPreviewStore
 
 private const val thumbnail_max_width = 384
+private const val fade_millis = 220
 
 data class VersionCardPreview(
 	val image_url: String?,
@@ -61,6 +65,11 @@ fun VersionCard(
 	val image_url = preview?.image_url
 	val latest_on_thumbnail_loaded by rememberUpdatedState(onThumbnailLoaded)
 	val has_thumbnail = thumbnail != null
+	val is_image_missing = preview?.is_image_missing == true
+	val name = preview?.name
+
+	val image_alpha by animateFloatAsState(if(has_thumbnail || is_image_missing) 1f else 0f, tween(fade_millis))
+	val name_alpha by animateFloatAsState(if(name != null) 1f else 0f, tween(fade_millis))
 
 	LaunchedEffect(image_url, is_visible, has_thumbnail) {
 		if(is_visible && image_url != null && !has_thumbnail) {
@@ -90,10 +99,10 @@ fun VersionCard(
 					bitmap = thumbnail,
 					contentDescription = null,
 					contentScale = ContentScale.Crop,
-					modifier = Modifier.fillMaxSize()
+					modifier = Modifier.fillMaxSize().alpha(image_alpha)
 				)
-			} else if(preview?.is_image_missing == true) {
-				DefaultThumbnail(modifier = Modifier.fillMaxSize())
+			} else if(is_image_missing) {
+				DefaultThumbnail(modifier = Modifier.fillMaxSize().alpha(image_alpha))
 			}
 		}
 
@@ -105,10 +114,11 @@ fun VersionCard(
 				overflow = TextOverflow.Ellipsis
 			)
 			BasicText(
-				text = preview?.name ?: " ",
+				text = name ?: " ",
 				style = QuantumTextStyles.label,
 				maxLines = 1,
-				overflow = TextOverflow.Ellipsis
+				overflow = TextOverflow.Ellipsis,
+				modifier = Modifier.alpha(name_alpha)
 			)
 		}
 	}
