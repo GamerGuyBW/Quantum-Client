@@ -42,6 +42,7 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 	val groups = remember(edition) { GroupStore.loadForEdition(edition) }
 	val group_options = listOf(DropdownOption<String?>(null, "No group")) + groups.map { group -> DropdownOption<String?>(group.id, group.name) }
 	val type_options = listOf(DropdownOption<VersionType?>(null, "All")) + VersionType.entries.map { version_type -> DropdownOption<VersionType?>(version_type, version_type.display_name) }
+	val loader_options = Loader.entries.map { loader -> DropdownOption(loader, loader.display_name) }
 	val coroutine_scope = rememberCoroutineScope()
 
 	var instance_name by remember { mutableStateOf("") }
@@ -173,22 +174,15 @@ fun CreateInstanceForm(edition: Edition, onCreated: () -> Unit, onCancel: () -> 
 		)
 
 		if(edition == Edition.JAVA) {
-			Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-				BasicText(text = "Mod loader", style = QuantumTextStyles.label)
-
-				Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-					Loader.entries.forEach { loader ->
-						ChoiceChip(
-							text = loader.display_name,
-							is_selected = loader == selected_loader,
-							onClick = {
-								selected_loader = loader
-								error_message = null
-							}
-						)
-					}
+			QuantumDropdown(
+				label = "Mod loader",
+				options = loader_options,
+				selected_value = selected_loader,
+				onValueSelected = { loader ->
+					selected_loader = loader
+					error_message = null
 				}
-			}
+			)
 
 			if(is_version_list_ready) {
 				Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

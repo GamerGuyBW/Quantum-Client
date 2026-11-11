@@ -77,22 +77,3 @@ fun QuantumTextField(label: String, value: String, onValueChange: (String) -> Un
 		)
 	}
 }
-
-@Composable
-fun ChoiceChip(text: String, is_selected: Boolean, onClick: () -> Unit) {
-	val border_colour = if(is_selected) QuantumColours.blue else QuantumColours.border
-	val text_colour = if(is_selected) QuantumColours.text_primary else QuantumColours.text_secondary
-	val shape = RoundedCornerShape(8.dp)
-
-	Box(
-		modifier = Modifier
-			.clip(shape)
-			.background(QuantumColours.surface)
-			.border(1.dp, border_colour, shape)
-			.clickable(onClick = onClick)
-			.pointerHoverIcon(PointerIcon.Hand)
-			.padding(horizontal = 14.dp, vertical = 8.dp)
-	) {
-		BasicText(text = text, style = QuantumTextStyles.body.copy(color = text_colour))
-	}
-}
