@@ -39,13 +39,18 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 	var selected_instance_id by remember(edition) { mutableStateOf<String?>(null) }
 	var managed_group_id by remember(edition) { mutableStateOf<String?>(null) }
 	var is_confirming_delete by remember(edition) { mutableStateOf(false) }
+	var search_text by remember(edition) { mutableStateOf("") }
 
 	val grid_state = remember(edition) { LazyGridState() }
 
 	val selected_instance = instances.firstOrNull { instance -> instance.id == selected_instance_id }
 	val managed_group = groups.firstOrNull { group -> group.id == managed_group_id }
 	val group_ids = groups.map { group -> group.id }.toSet()
-	val loose_instances = instances.filter { instance -> instance.group_id == null || instance.group_id !in group_ids }
+	val trimmed_search = search_text.trim()
+	val is_searching = trimmed_search.isNotEmpty()
+	val shown_instances = if(is_searching) instances.filter { instance -> instance.name.contains(trimmed_search, ignoreCase = true) } else instances
+	val loose_instances = shown_instances.filter { instance -> instance.group_id == null || instance.group_id !in group_ids }
+	val shown_groups = if(is_searching) groups.filter { group -> shown_instances.any { instance -> instance.group_id == group.id } } else groups
 	val group_options = listOf(DropdownOption<String?>(null, "No group")) + groups.map { group -> DropdownOption<String?>(group.id, group.name) }
 
 	fun reload() {
@@ -94,11 +99,26 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 					horizontalArrangement = Arrangement.spacedBy(10.dp),
 					verticalAlignment = Alignment.CenterVertically
 				) {
-					BasicText(text = "${edition.display_name} instances", style = QuantumTextStyles.heading)
+					Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+						BasicText(text = "${edition.display_name} Edition", style = QuantumTextStyles.title)
+						BasicText(text = countText(instances.size, groups.size), style = QuantumTextStyles.label)
+					}
+
 					Spacer(modifier = Modifier.weight(1f))
-					QuantumButton(text = "Create group", style = ButtonStyle.SECONDARY, onClick = { is_creating_group = true })
+
+					if(instances.isNotEmpty()) {
+						QuantumTextField(
+							label = null,
+							value = search_text,
+							onValueChange = { new_value -> search_text = new_value },
+							width = 220.dp,
+							placeholder = "Search instances"
+						)
+					}
+
+					QuantumButton(text = "New group", style = ButtonStyle.SECONDARY, onClick = { is_creating_group = true })
 					QuantumButton(
-						text = "Create instance",
+						text = "New instance",
 						onClick = {
 							is_creating_group = false
 							is_creating = true
@@ -118,7 +138,9 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 				}
 
 				if(instances.isEmpty() && groups.isEmpty()) {
-					BasicText(text = "No ${edition.display_name} instances yet. Create one to get started.", style = QuantumTextStyles.label)
+					BasicText(text = "No ${edition.display_name} instances yet. Select `New instance` to create one.", style = QuantumTextStyles.label)
+				} else if(is_searching && shown_instances.isEmpty()) {
+					BasicText(text = "No instances match `$trimmed_search`.", style = QuantumTextStyles.label)
 				} else {
 					Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
 						LazyVerticalGrid(
@@ -136,13 +158,15 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 								)
 							}
 
-							groups.forEach { group ->
-								val group_instances = instances.filter { instance -> instance.group_id == group.id }
+							shown_groups.forEach { group ->
+								val group_instances = shown_instances.filter { instance -> instance.group_id == group.id }
+								val is_group_collapsed = group.is_collapsed && !is_searching
 
 								item(key = "group-${group.id}", span = { GridItemSpan(maxLineSpan) }) {
 									GroupHeading(
 										group = group,
 										instance_count = group_instances.size,
+										is_collapsed = is_group_collapsed,
 										is_managed = group.id == managed_group_id,
 										onToggleCollapsed = {
 											val will_collapse = !group.is_collapsed
@@ -157,7 +181,7 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 									)
 								}
 
-								if(!group.is_collapsed) {
+								if(!is_group_collapsed) {
 									if(group_instances.isEmpty()) {
 										item(key = "empty-${group.id}", span = { GridItemSpan(maxLineSpan) }) {
 											BasicText(text = "No instances in this group yet.", style = QuantumTextStyles.label)
@@ -238,4 +262,11 @@ fun EditionPage(edition: Edition, modifier: Modifier = Modifier) {
 			}
 		}
 	}
+}
+
+private fun countText(instance_count: Int, group_count: Int): String {
+	val instance_text = if(instance_count == 1) "1 instance" else "$instance_count instances"
+	val group_text = if(group_count == 1) "1 group" else "$group_count groups"
+
+	return "$instance_text · $group_text"
 }

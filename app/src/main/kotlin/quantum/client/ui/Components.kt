@@ -60,7 +60,7 @@ fun QuantumButton(text: String, onClick: () -> Unit, style: ButtonStyle = Button
 }
 
 @Composable
-fun QuantumTextField(label: String?, value: String, onValueChange: (String) -> Unit, width: Dp = 320.dp) {
+fun QuantumTextField(label: String?, value: String, onValueChange: (String) -> Unit, width: Dp = 320.dp, placeholder: String? = null) {
 	val shape = RoundedCornerShape(8.dp)
 
 	Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -79,7 +79,16 @@ fun QuantumTextField(label: String?, value: String, onValueChange: (String) -> U
 				.clip(shape)
 				.background(QuantumColours.surface)
 				.border(1.dp, QuantumColours.border, shape)
-				.padding(horizontal = 12.dp, vertical = 10.dp)
+				.padding(horizontal = 12.dp, vertical = 10.dp),
+			decorationBox = { inner_text_field ->
+				Box {
+					if(value.isEmpty() && placeholder != null) {
+						BasicText(text = placeholder, style = QuantumTextStyles.label)
+					}
+
+					inner_text_field()
+				}
+			}
 		)
 	}
 }
@@ -138,4 +147,22 @@ fun QuantumTab(text: String, is_selected: Boolean, onClick: () -> Unit) {
 	) {
 		BasicText(text = text, style = QuantumTextStyles.label.copy(color = text_colour))
 	}
+}
+
+@Composable
+fun QuantumChip(text: String, is_accent: Boolean = false) {
+	val shape = RoundedCornerShape(5.dp)
+	val text_colour = if(is_accent) QuantumColours.turquoise else QuantumColours.text_secondary
+	val border_colour = if(is_accent) QuantumColours.accent_chip_border else QuantumColours.border
+
+	BasicText(
+		text = text,
+		style = QuantumTextStyles.small.copy(color = text_colour),
+		maxLines = 1,
+		modifier = Modifier
+			.clip(shape)
+			.background(QuantumColours.chip_background)
+			.border(1.dp, border_colour, shape)
+			.padding(horizontal = 7.dp, vertical = 2.dp)
+	)
 }

@@ -125,7 +125,7 @@ fun VersionCard(
 }
 
 @Composable
-private fun DefaultThumbnail(modifier: Modifier = Modifier) {
+fun DefaultThumbnail(modifier: Modifier = Modifier) {
 	Canvas(modifier = modifier) {
 		val cube_radius = size.minDimension * 0.27f
 		val side_offset = cube_radius * 0.866f

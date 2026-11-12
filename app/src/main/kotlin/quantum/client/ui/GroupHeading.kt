@@ -1,10 +1,12 @@
 package quantum.client.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
@@ -22,15 +24,20 @@ import quantum.shared.Group
 fun GroupHeading(
 	group: Group,
 	instance_count: Int,
+	is_collapsed: Boolean,
 	is_managed: Boolean,
 	onToggleCollapsed: () -> Unit,
 	onManage: () -> Unit
 ) {
-	val arrow = if(group.is_collapsed) "▸" else "▾"
+	val arrow = if(is_collapsed) "▸" else "▾"
 	val manage_colour = if(is_managed) QuantumColours.blue else QuantumColours.text_secondary
 	val shape = RoundedCornerShape(6.dp)
 
-	Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+	Row(
+		modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+		horizontalArrangement = Arrangement.spacedBy(10.dp),
+		verticalAlignment = Alignment.CenterVertically
+	) {
 		Row(
 			modifier = Modifier
 				.clip(shape)
@@ -41,11 +48,11 @@ fun GroupHeading(
 			verticalAlignment = Alignment.CenterVertically
 		) {
 			BasicText(text = arrow, style = QuantumTextStyles.label)
-			BasicText(text = group.name, style = QuantumTextStyles.body.copy(fontWeight = FontWeight.Medium))
+			BasicText(text = group.name, style = QuantumTextStyles.body.copy(fontWeight = FontWeight.SemiBold))
 			BasicText(text = instance_count.toString(), style = QuantumTextStyles.label)
 		}
 
-		Spacer(modifier = Modifier.weight(1f))
+		Box(modifier = Modifier.weight(1f).height(1.dp).background(QuantumColours.border))
 
 		BasicText(
 			text = "⋯",

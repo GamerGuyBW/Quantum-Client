@@ -76,8 +76,8 @@ fun VersionStep(
 				emptyList()
 			} else {
 				val column_count = visible_items.maxOf { item_info -> item_info.column } + 1
-				val first_index = (visible_items.minOf { item_info -> item_info.index } - column_count * nearby_rows).coerceAtLeast(0)
-				val last_index = (visible_items.maxOf { item_info -> item_info.index } + column_count * nearby_rows).coerceAtMost(version_choices.lastIndex)
+				val first_index = (visible_items.minOf { item_info -> item_info.index } - column_count * nearby_rows).coerceIn(0, version_choices.lastIndex)
+				val last_index = (visible_items.maxOf { item_info -> item_info.index } + column_count * nearby_rows).coerceIn(first_index, version_choices.lastIndex)
 
 				version_choices.subList(first_index, last_index + 1).map { version_choice -> version_choice.version_id }.distinct()
 			}
@@ -182,8 +182,8 @@ fun VersionStep(
 	}
 
 	Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-		Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
-			QuantumTextField(label = "Search versions", value = search_text, onValueChange = onSearchChange, width = 260.dp)
+		Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+			QuantumTextField(label = null, value = search_text, onValueChange = onSearchChange, width = 260.dp, placeholder = "Search versions")
 
 			QuantumTab(text = "All", is_selected = type_filter == null, onClick = { onTypeFilterChange(null) })
 

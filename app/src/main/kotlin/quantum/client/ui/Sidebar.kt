@@ -20,7 +20,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,7 +39,7 @@ fun Sidebar(selected_edition: Edition, onEditionSelected: (Edition) -> Unit) {
 
 		Edition.entries.forEach { edition ->
 			SidebarTab(
-				text = edition.display_name,
+				edition = edition,
 				is_selected = edition == selected_edition,
 				onClick = { onEditionSelected(edition) }
 			)
@@ -50,22 +49,25 @@ fun Sidebar(selected_edition: Edition, onEditionSelected: (Edition) -> Unit) {
 
 @Composable
 fun Logo() {
-	Row(modifier = Modifier.padding(start = 8.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-		BasicText(text = "Quantum ", style = TextStyle(color = QuantumColours.text_primary, fontSize = 16.sp, fontWeight = FontWeight.Medium))
-		BasicText(text = "Client", style = TextStyle(color = QuantumColours.red, fontSize = 16.sp, fontWeight = FontWeight.Medium))
+	val logo_style = QuantumTextStyles.heading.copy(fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+
+	Row(modifier = Modifier.padding(start = 8.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+		BasicText(text = "Quantum ", style = logo_style)
+		BasicText(text = "Client", style = logo_style.copy(color = QuantumColours.red))
 	}
 }
 
 @Composable
-fun SidebarTab(text: String, is_selected: Boolean, onClick: () -> Unit) {
+fun SidebarTab(edition: Edition, is_selected: Boolean, onClick: () -> Unit) {
 	val background_colour = if(is_selected) QuantumColours.surface else Color.Transparent
 	val text_colour = if(is_selected) QuantumColours.text_primary else QuantumColours.text_secondary
 	val indicator_colour = if(is_selected) QuantumColours.turquoise else Color.Transparent
+	val text_weight = if(is_selected) FontWeight.Medium else FontWeight.Normal
 
 	Row(
 		modifier = Modifier
 			.fillMaxWidth()
-			.height(38.dp)
+			.height(40.dp)
 			.clip(RoundedCornerShape(8.dp))
 			.background(background_colour)
 			.clickable(onClick = onClick)
@@ -73,6 +75,14 @@ fun SidebarTab(text: String, is_selected: Boolean, onClick: () -> Unit) {
 		verticalAlignment = Alignment.CenterVertically
 	) {
 		Box(modifier = Modifier.width(3.dp).fillMaxHeight().background(indicator_colour))
-		BasicText(text = text, modifier = Modifier.padding(start = 12.dp), style = TextStyle(color = text_colour, fontSize = 14.sp))
+
+		Row(
+			modifier = Modifier.padding(start = 12.dp),
+			horizontalArrangement = Arrangement.spacedBy(10.dp),
+			verticalAlignment = Alignment.CenterVertically
+		) {
+			EditionIcon(edition = edition, is_selected = is_selected)
+			BasicText(text = "${edition.display_name} Edition", style = QuantumTextStyles.body.copy(color = text_colour, fontWeight = text_weight))
+		}
 	}
 }
